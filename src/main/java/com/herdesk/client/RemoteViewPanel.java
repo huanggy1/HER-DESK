@@ -74,6 +74,14 @@ public class RemoteViewPanel extends JPanel {
         repaint();
     }
 
+    /**
+     * 容器切换或全屏布局后强制重算绘制区域。
+     */
+    public void refreshDisplayBounds() {
+        recalculateDrawBounds();
+        repaint();
+    }
+
     public int getRemoteWidth() {
         return remoteWidth;
     }
