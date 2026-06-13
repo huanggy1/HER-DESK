@@ -12,6 +12,7 @@
 - [环境要求](#环境要求)
 - [快速开始](#快速开始)
 - [构建与运行](#构建与运行)
+  - [原生安装包打包（DMG / EXE）](#原生安装包打包dmg--exe)
 - [界面说明](#界面说明)
 - [公网中继跨网访问](#公网中继跨网访问)
   - [在哪里配置中继地址（界面操作）](#在哪里配置中继地址界面操作)
@@ -64,6 +65,7 @@
 
 - 一个 JAR 双击即用，Swing 轻量界面
 - 独立中继 JAR（`her-desk-relay.jar`），可部署在公网 VPS
+- 支持 `jpackage` 打包为 **macOS DMG** / **Windows EXE**（内置 JRE，用户无需安装 Java）
 
 ---
 
@@ -183,6 +185,85 @@ java -jar target/her-desk-relay.jar 9000     # 公网中继（VPS，端口可改
 
 在 IntelliJ IDEA / Cursor 中直接运行 `com.herdesk.Launcher` 主类，或通过 Maven 插件启动。  
 **注意**：IDE 运行时，系统权限里要勾选的是 **IDE 本身**（见下文 macOS 权限章节）。
+
+### 方式六：原生安装包打包（DMG / EXE）
+
+面向最终用户分发时，可使用 JDK 自带的 `jpackage` 打包为**自带运行时的原生安装包**，用户**无需单独安装 Java**。
+
+#### 环境要求
+
+| 项目 | 要求 |
+|------|------|
+| 打包工具 | **JDK 17+**（须包含 `jpackage` 命令） |
+| macOS 产物 | 须在 **macOS** 上执行打包脚本 |
+| Windows 产物 | 须在 **Windows** 上执行打包脚本 |
+| 应用 JAR | 脚本会自动 `mvn compile` 并手动打 JAR |
+
+> **注意**：`jpackage` 不能跨平台交叉打包。在 Mac 上只能生成 `.dmg`，在 Windows 上只能生成 `.exe`。
+
+#### macOS：生成 DMG
+
+```bash
+chmod +x scripts/package-mac.command
+./scripts/package-mac.command
+```
+
+产物目录 `target/dist/`：
+
+```
+Her Desk-1.0.0.dmg          # 主程序（被控端 + 控制端）
+Her Desk Relay-1.0.0.dmg    # 公网中继服务
+```
+
+安装：双击 DMG → 将应用拖入「应用程序」文件夹 → 从启动台打开。
+
+**首次打开提示「无法验证开发者」**：右键应用 → **打开**（当前安装包未做苹果代码签名，属正常现象）。
+
+#### Windows：生成 EXE
+
+在 Windows 电脑上执行：
+
+```bat
+scripts\package-windows.bat
+```
+
+产物目录 `target\dist\`：
+
+```
+Her Desk-1.0.0.exe          # 主程序安装包
+Her Desk Relay-1.0.0.exe    # 中继服务安装包
+```
+
+按安装向导完成安装后，从开始菜单或桌面快捷方式启动。
+
+#### 打包脚本说明
+
+| 脚本 | 平台 | 作用 |
+|------|------|------|
+| `scripts/package-mac.command` | macOS | 一键编译 JAR 并生成两个 DMG |
+| `scripts/package-windows.bat` | Windows | 一键编译 JAR 并生成两个 EXE |
+
+脚本流程：编译 → 打 JAR → 调用 `jpackage` → 输出到 `target/dist/`。
+
+#### 与 JAR 方式对比
+
+| 对比项 | JAR 方式 | DMG / EXE 安装包 |
+|--------|----------|------------------|
+| 用户是否需装 Java | 需要 JDK 8+ | **不需要**（内置 JRE） |
+| 体积 | 约 120 KB | 约 50 MB / 个 |
+| 适用场景 | 开发、技术用户 | **商业分发、普通用户** |
+| 启动方式 | `java -jar` 或脚本 | 双击应用图标 |
+
+#### 常见问题
+
+**Q: `jpackage` 命令找不到？**  
+A: 请安装 JDK 17 或更高版本，并确保 `JAVA_HOME/bin` 在 PATH 中。macOS 可用 SDKMAN：`sdk install java 17.0.8-tem`。
+
+**Q: 在 Mac 上能否直接打 Windows 的 EXE？**  
+A: 不能。请在 Windows 机器上运行 `scripts\package-windows.bat`，或使用 Windows CI 构建。
+
+**Q: DMG/EXE 需要提交到 Git 吗？**  
+A: 不需要。`target/dist/` 已在 `.gitignore` 中忽略，仅提交打包脚本即可。
 
 ---
 
@@ -599,7 +680,11 @@ java -jar her-desk-relay.jar 9000
 
 ```
 her-desk/
-├── scripts/                       # 双击启动脚本（Mac / Windows）
+├── scripts/                       # 启动脚本 + 原生安装包打包脚本
+│   ├── package-mac.command        # macOS DMG 一键打包
+│   ├── package-windows.bat        # Windows EXE 一键打包
+│   └── run*.command / run*.bat    # JAR 启动脚本
+├── docs/screenshots/              # 产品截图（营销文档用）
 ├── src/main/java/com/herdesk/
 │   ├── Launcher.java              # 统一入口（一个 JAR 双模式）
 │   ├── common/                    # 协议、差分编解码、网络、UI 主题、中继连接
@@ -613,6 +698,7 @@ her-desk/
 │   ├── server/                    # 被控端（截图、键鼠执行、ServerApp）
 │   ├── client/                    # 控制端（画面显示、键鼠采集、全屏、ClientApp）
 │   └── relay/                     # 公网中继（RelayServer、RelayMain）
+├── MARKETING.md                   # 营销功能介绍文档
 ├── pom.xml
 └── README.md
 ```
