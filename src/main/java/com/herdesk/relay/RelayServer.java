@@ -1,6 +1,7 @@
 package com.herdesk.relay;
 
 import com.herdesk.common.AppLogger;
+import com.herdesk.common.RelayAuth;
 import com.herdesk.common.RelayConnector;
 import java.io.IOException;
 import java.io.InputStream;
@@ -19,6 +20,7 @@ public class RelayServer {
 
     private final int port;
     private final Map<String, Socket> waitingRooms = new ConcurrentHashMap<String, Socket>();
+    private final Map<String, String> roomPasswords = new ConcurrentHashMap<String, String>();
     private final ExecutorService executor = Executors.newCachedThreadPool();
     private volatile boolean running;
 
@@ -57,6 +59,7 @@ public class RelayServer {
             closeQuietly(socket);
         }
         waitingRooms.clear();
+        roomPasswords.clear();
         executor.shutdownNow();
         AppLogger.console(AppLogger.Level.INFO, "Her Desk Relay 已停止");
     }
@@ -79,11 +82,11 @@ public class RelayServer {
                 return;
             }
             String command = parts[0].toUpperCase();
-            String roomId = parts[1].trim();
+            String payload = parts[1].trim();
             if ("REGISTER".equals(command)) {
-                handleRegister(socket, roomId);
+                handleRegister(socket, payload);
             } else if ("JOIN".equals(command)) {
-                handleJoin(socket, roomId);
+                handleJoin(socket, payload);
             } else {
                 AppLogger.console(AppLogger.Level.WARN, "未知命令 " + command + "，来源 " + remote);
                 sendAndClose(socket, "ERROR UNKNOWN_COMMAND");
@@ -95,11 +98,17 @@ public class RelayServer {
         }
     }
 
-    private void handleRegister(Socket socket, String roomId) throws IOException {
+    private void handleRegister(Socket socket, String payload) throws IOException {
+        String roomId;
+        String password;
         try {
+            String[] roomAndPassword = RelayConnector.parseRoomAndPassword(payload);
+            roomId = roomAndPassword[0];
+            password = roomAndPassword[1];
             RelayConnector.validateRoomId(roomId);
+            RelayAuth.validatePassword(password);
         } catch (IOException e) {
-            AppLogger.console(AppLogger.Level.WARN, "REGISTER 失败，房间 " + roomId + "：" + e.getMessage());
+            AppLogger.console(AppLogger.Level.WARN, "REGISTER 失败：" + e.getMessage());
             sendAndClose(socket, "ERROR " + e.getMessage());
             return;
         }
@@ -108,27 +117,44 @@ public class RelayServer {
             closeQuietly(previous);
             AppLogger.console(AppLogger.Level.INFO, "房间 " + roomId + " 被新注册替换");
         }
+        roomPasswords.remove(roomId);
         waitingRooms.put(roomId, socket);
+        roomPasswords.put(roomId, password);
         RelayConnector.sendLine(socket, "OK WAITING");
         AppLogger.console(AppLogger.Level.INFO,
                 "房间已注册: " + roomId + " <- " + socket.getRemoteSocketAddress());
     }
 
-    private void handleJoin(Socket clientSocket, String roomId) throws IOException {
+    private void handleJoin(Socket clientSocket, String payload) throws IOException {
+        String roomId;
+        String password;
         try {
+            String[] roomAndPassword = RelayConnector.parseRoomAndPassword(payload);
+            roomId = roomAndPassword[0];
+            password = roomAndPassword[1];
             RelayConnector.validateRoomId(roomId);
+            RelayAuth.validatePassword(password);
         } catch (IOException e) {
-            AppLogger.console(AppLogger.Level.WARN, "JOIN 失败，房间 " + roomId + "：" + e.getMessage());
+            AppLogger.console(AppLogger.Level.WARN, "JOIN 失败：" + e.getMessage());
             sendAndClose(clientSocket, "ERROR " + e.getMessage());
             return;
         }
-        Socket serverSocket = waitingRooms.remove(roomId);
+        String expectedPassword = roomPasswords.get(roomId);
+        Socket serverSocket = waitingRooms.get(roomId);
         if (serverSocket == null || serverSocket.isClosed()) {
             AppLogger.console(AppLogger.Level.WARN,
                     "JOIN 失败，房间未找到: " + roomId + " <- " + clientSocket.getRemoteSocketAddress());
             sendAndClose(clientSocket, "ERROR ROOM_NOT_FOUND");
             return;
         }
+        if (expectedPassword == null || !expectedPassword.equals(password)) {
+            AppLogger.console(AppLogger.Level.WARN,
+                    "JOIN 失败，密码错误: " + roomId + " <- " + clientSocket.getRemoteSocketAddress());
+            sendAndClose(clientSocket, "ERROR INVALID_PASSWORD");
+            return;
+        }
+        waitingRooms.remove(roomId);
+        roomPasswords.remove(roomId);
         RelayConnector.sendLine(clientSocket, "OK CONNECTED");
         AppLogger.console(AppLogger.Level.INFO,
                 "房间已配对: " + roomId + "，控制端 " + clientSocket.getRemoteSocketAddress()

@@ -5,14 +5,15 @@ import com.herdesk.common.ConnectionMode;
 import com.herdesk.common.LogPanel;
 import com.herdesk.common.NetworkAddressUtil;
 import com.herdesk.common.Protocol;
+import com.herdesk.common.RelayAuth;
 import com.herdesk.common.RelayConnector;
+import com.herdesk.common.RoomIdGenerator;
+import com.herdesk.common.UiTheme;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
-import java.awt.Font;
 import java.awt.GridLayout;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
-import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JFrame;
@@ -34,6 +35,8 @@ public class ServerApp {
     private JTextField relayHostField;
     private JTextField relayPortField;
     private JTextField roomIdField;
+    private JTextField roomPasswordField;
+    private JButton regenerateRoomButton;
     private JLabel ipLabel;
     private JLabel statusLabel;
     private JLabel clientLabel;
@@ -54,8 +57,10 @@ public class ServerApp {
     }
 
     private void createAndShowUi() {
+        UiTheme.install();
         frame = new JFrame("Her Desk - 被控端");
         frame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+        UiTheme.styleFrame(frame);
         frame.addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
@@ -64,54 +69,70 @@ public class ServerApp {
             }
         });
 
-        JPanel root = new JPanel(new BorderLayout(10, 10));
-        root.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+        JPanel root = new JPanel(new BorderLayout(0, 10));
+        root.setBackground(UiTheme.BACKGROUND);
+        root.add(UiTheme.createHeader("Her Desk 被控端", "共享本机桌面，等待控制端连接"), BorderLayout.NORTH);
 
-        JPanel infoPanel = new JPanel(new GridLayout(4, 1, 4, 4));
+        JPanel body = UiTheme.createRootPanel();
+        body.setLayout(new BorderLayout(0, 10));
+
+        JPanel infoCard = UiTheme.createCard("运行状态");
+        infoCard.setLayout(new GridLayout(4, 1, 4, 8));
         ipLabel = new JLabel("本机 IP: " + NetworkAddressUtil.getPrimaryLocalIpv4());
+        UiTheme.styleTitleLabel(ipLabel);
         statusLabel = new JLabel("状态: 未启动");
+        UiTheme.styleStatusLabel(statusLabel);
         clientLabel = new JLabel("客户端: 无");
+        UiTheme.styleStatusLabel(clientLabel);
         fpsLabel = new JLabel("帧率: -");
-        Font bold = ipLabel.getFont().deriveFont(Font.BOLD, 14f);
-        ipLabel.setFont(bold);
-        infoPanel.add(ipLabel);
-        infoPanel.add(statusLabel);
-        infoPanel.add(clientLabel);
-        infoPanel.add(fpsLabel);
+        UiTheme.styleStatusLabel(fpsLabel);
+        infoCard.add(ipLabel);
+        infoCard.add(statusLabel);
+        infoCard.add(clientLabel);
+        infoCard.add(fpsLabel);
 
-        JPanel modePanel = new JPanel(new BorderLayout(8, 8));
-        JPanel modeSelectPanel = new JPanel(new BorderLayout(8, 0));
-        modeSelectPanel.add(new JLabel("连接模式:"), BorderLayout.WEST);
+        JPanel modeCard = UiTheme.createCard("连接设置");
+        modeCard.setLayout(new BorderLayout(8, 10));
+        JPanel modeSelectPanel = new JPanel(new BorderLayout(10, 0));
+        modeSelectPanel.setOpaque(false);
+        JLabel modeLabel = new JLabel("连接模式");
+        UiTheme.styleLabel(modeLabel);
+        modeSelectPanel.add(modeLabel, BorderLayout.WEST);
         modeBox = new JComboBox<ConnectionMode>(ConnectionMode.values());
+        UiTheme.styleComboBox(modeBox);
         modeBox.addActionListener(e -> switchModePanel());
         modeSelectPanel.add(modeBox, BorderLayout.CENTER);
-        modePanel.add(modeSelectPanel, BorderLayout.NORTH);
+        modeCard.add(modeSelectPanel, BorderLayout.NORTH);
 
         modeCardPanel = new JPanel(new CardLayout());
+        modeCardPanel.setOpaque(false);
         modeCardPanel.add(createDirectPanel(), ConnectionMode.DIRECT.name());
         modeCardPanel.add(createRelayPanel(), ConnectionMode.RELAY.name());
-        modePanel.add(modeCardPanel, BorderLayout.CENTER);
+        modeCard.add(modeCardPanel, BorderLayout.CENTER);
 
-        JPanel buttonPanel = new JPanel(new GridLayout(1, 2, 8, 0));
-        startButton = new JButton("启动服务");
-        stopButton = new JButton("停止服务");
+        JPanel center = new JPanel(new BorderLayout(0, 10));
+        center.setOpaque(false);
+        center.add(infoCard, BorderLayout.NORTH);
+        center.add(modeCard, BorderLayout.CENTER);
+        logPanel = new LogPanel(8);
+        center.add(logPanel, BorderLayout.SOUTH);
+
+        JPanel buttonPanel = new JPanel(new GridLayout(1, 2, 12, 0));
+        buttonPanel.setOpaque(false);
+        startButton = UiTheme.createPrimaryButton("启动服务");
+        stopButton = UiTheme.createDangerButton("停止服务");
         stopButton.setEnabled(false);
         startButton.addActionListener(e -> startServer());
         stopButton.addActionListener(e -> stopServer());
         buttonPanel.add(startButton);
         buttonPanel.add(stopButton);
 
-        JPanel center = new JPanel(new BorderLayout(8, 8));
-        center.add(infoPanel, BorderLayout.NORTH);
-        center.add(modePanel, BorderLayout.CENTER);
-        logPanel = new LogPanel(8);
-        center.add(logPanel, BorderLayout.SOUTH);
-
-        root.add(center, BorderLayout.CENTER);
-        root.add(buttonPanel, BorderLayout.SOUTH);
+        body.add(center, BorderLayout.CENTER);
+        body.add(buttonPanel, BorderLayout.SOUTH);
+        root.add(body, BorderLayout.CENTER);
 
         frame.setContentPane(root);
-        frame.setMinimumSize(new java.awt.Dimension(520, 520));
+        frame.setMinimumSize(new java.awt.Dimension(540, 560));
         frame.pack();
         frame.setLocationRelativeTo(null);
         frame.setVisible(true);
@@ -123,27 +144,63 @@ public class ServerApp {
     }
 
     private JPanel createDirectPanel() {
-        JPanel panel = new JPanel(new BorderLayout(8, 0));
-        panel.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
-        panel.add(new JLabel("监听端口:"), BorderLayout.WEST);
+        JPanel panel = new JPanel(new BorderLayout(10, 0));
+        panel.setOpaque(false);
+        panel.setBorder(javax.swing.BorderFactory.createEmptyBorder(4, 0, 0, 0));
+        JLabel portLabel = new JLabel("监听端口");
+        UiTheme.styleLabel(portLabel);
+        panel.add(portLabel, BorderLayout.WEST);
         portField = new JTextField(String.valueOf(Protocol.DEFAULT_PORT), 8);
+        UiTheme.styleNetworkField(portField);
         panel.add(portField, BorderLayout.CENTER);
         return panel;
     }
 
     private JPanel createRelayPanel() {
-        JPanel panel = new JPanel(new GridLayout(3, 2, 8, 6));
-        panel.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
-        panel.add(new JLabel("中继地址:"));
-        relayHostField = new JTextField("your-server.com", 12);
+        JPanel panel = new JPanel(new GridLayout(4, 2, 10, 8));
+        panel.setOpaque(false);
+        panel.setBorder(javax.swing.BorderFactory.createEmptyBorder(4, 0, 0, 0));
+        JLabel l1 = new JLabel("中继地址");
+        UiTheme.styleLabel(l1);
+        panel.add(l1);
+        relayHostField = new JTextField("198.176.62.33", 18);
+        UiTheme.styleNetworkField(relayHostField);
         panel.add(relayHostField);
-        panel.add(new JLabel("中继端口:"));
-        relayPortField = new JTextField(String.valueOf(RelayConnector.DEFAULT_RELAY_PORT), 8);
+        JLabel l2 = new JLabel("中继端口");
+        UiTheme.styleLabel(l2);
+        panel.add(l2);
+        relayPortField = new JTextField("11111", 8);
+        UiTheme.styleNetworkField(relayPortField);
         panel.add(relayPortField);
-        panel.add(new JLabel("房间号:"));
-        roomIdField = new JTextField("room001", 12);
-        panel.add(roomIdField);
+        JLabel l3 = new JLabel("房间号");
+        UiTheme.styleLabel(l3);
+        panel.add(l3);
+        JPanel roomRow = new JPanel(new BorderLayout(8, 0));
+        roomRow.setOpaque(false);
+        roomIdField = new JTextField(12);
+        UiTheme.styleNetworkField(roomIdField);
+        roomRow.add(roomIdField, BorderLayout.CENTER);
+        regenerateRoomButton = UiTheme.createSecondaryButton("重新生成");
+        regenerateRoomButton.addActionListener(e -> regenerateRoomId());
+        roomRow.add(regenerateRoomButton, BorderLayout.EAST);
+        panel.add(roomRow);
+        JLabel l4 = new JLabel("房间密码");
+        UiTheme.styleLabel(l4);
+        panel.add(l4);
+        roomPasswordField = new JTextField(RelayAuth.DEFAULT_PASSWORD, 12);
+        UiTheme.styleNetworkField(roomPasswordField);
+        panel.add(roomPasswordField);
+        regenerateRoomId();
         return panel;
+    }
+
+    private void regenerateRoomId() {
+        if (roomIdField != null) {
+            roomIdField.setText(RoomIdGenerator.generate());
+            if (logPanel != null) {
+                logPanel.append(AppLogger.Level.INFO, "已生成新房间号: " + roomIdField.getText());
+            }
+        }
     }
 
     private void switchModePanel() {
@@ -152,6 +209,9 @@ public class ServerApp {
         layout.show(modeCardPanel, mode.name());
         if (mode == ConnectionMode.RELAY) {
             ipLabel.setText("中继模式：控制端通过公网中继连接");
+            if (roomIdField != null && roomIdField.getText().trim().isEmpty()) {
+                regenerateRoomId();
+            }
         } else {
             ipLabel.setText("本机 IP: " + NetworkAddressUtil.getPrimaryLocalIpv4());
         }
@@ -169,6 +229,7 @@ public class ServerApp {
             if (mode == ConnectionMode.RELAY) {
                 String relayHost = relayHostField.getText().trim();
                 String roomId = roomIdField.getText().trim();
+                String password = roomPasswordField.getText().trim();
                 int relayPort = parsePort(relayPortField.getText().trim(), RelayConnector.DEFAULT_RELAY_PORT);
                 if (relayHost.isEmpty()) {
                     String msg = "请输入中继地址";
@@ -177,9 +238,11 @@ public class ServerApp {
                     return;
                 }
                 RelayConnector.validateRoomId(roomId);
+                RelayAuth.validatePassword(password);
                 logPanel.append(AppLogger.Level.INFO,
-                        "用户启动服务：公网中继 " + relayHost + ":" + relayPort + "，房间 " + roomId);
-                server = new RemoteDesktopServer(relayHost, relayPort, roomId, listener);
+                        "用户启动服务：公网中继 " + relayHost + ":" + relayPort
+                                + "，房间 " + roomId);
+                server = new RemoteDesktopServer(relayHost, relayPort, roomId, password, listener);
             } else {
                 int port = parsePort(portField.getText().trim(), Protocol.DEFAULT_PORT);
                 logPanel.append(AppLogger.Level.INFO, "用户启动服务：内网直连，监听端口 " + port);
@@ -259,6 +322,10 @@ public class ServerApp {
         relayHostField.setEnabled(enabled);
         relayPortField.setEnabled(enabled);
         roomIdField.setEnabled(enabled);
+        roomPasswordField.setEnabled(enabled);
+        if (regenerateRoomButton != null) {
+            regenerateRoomButton.setEnabled(enabled);
+        }
         startButton.setEnabled(enabled);
         stopButton.setEnabled(!enabled);
     }

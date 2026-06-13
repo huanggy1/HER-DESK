@@ -41,6 +41,7 @@ public class RemoteDesktopServer {
     private final String relayHost;
     private final int relayPort;
     private final String roomId;
+    private final String roomPassword;
     private final ServerListener listener;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicBoolean clientConnected = new AtomicBoolean(false);
@@ -67,20 +68,22 @@ public class RemoteDesktopServer {
     private final AtomicBoolean firstFrameLogged = new AtomicBoolean(false);
 
     public RemoteDesktopServer(int port, ServerListener listener) {
-        this(port, false, null, 0, null, listener);
+        this(port, false, null, 0, null, null, listener);
     }
 
-    public RemoteDesktopServer(String relayHost, int relayPort, String roomId, ServerListener listener) {
-        this(0, true, relayHost, relayPort, roomId, listener);
+    public RemoteDesktopServer(String relayHost, int relayPort, String roomId, String roomPassword,
+                               ServerListener listener) {
+        this(0, true, relayHost, relayPort, roomId, roomPassword, listener);
     }
 
     private RemoteDesktopServer(int port, boolean relayMode, String relayHost,
-                                int relayPort, String roomId, ServerListener listener) {
+                                int relayPort, String roomId, String roomPassword, ServerListener listener) {
         this.port = port;
         this.relayMode = relayMode;
         this.relayHost = relayHost;
         this.relayPort = relayPort;
         this.roomId = roomId;
+        this.roomPassword = roomPassword;
         this.listener = listener;
         this.frameEncoder = new DeltaFrameEncoder(Protocol.BLOCK_SIZE);
         this.frameEncoder.setJpegQuality(qualityLevel.getJpegQuality());
@@ -159,7 +162,8 @@ public class RemoteDesktopServer {
                 try {
                     logInfo("向中继 " + relayHost + ":" + relayPort + " 注册房间 " + roomId);
                     listener.onStatusChanged("注册房间 " + roomId + " 到中继...");
-                    java.net.Socket socket = RelayConnector.registerServer(relayHost, relayPort, roomId);
+                    java.net.Socket socket = RelayConnector.registerServer(
+                            relayHost, relayPort, roomId, roomPassword);
                     logInfo("中继注册成功，等待控制端 JOIN");
                     listener.onStatusChanged("已注册，房间号: " + roomId + "，等待控制端连接");
                     handleNewClient(socket);

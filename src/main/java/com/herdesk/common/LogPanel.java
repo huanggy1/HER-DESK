@@ -1,7 +1,6 @@
 package com.herdesk.common;
 
 import java.awt.BorderLayout;
-import java.awt.Font;
 import javax.swing.BorderFactory;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
@@ -19,15 +18,28 @@ public class LogPanel extends JPanel {
 
     public LogPanel(int rows) {
         super(new BorderLayout());
-        setBorder(BorderFactory.createTitledBorder("日志"));
+        setOpaque(true);
+        setBackground(UiTheme.CARD);
         textArea = new JTextArea(rows, 0);
         textArea.setEditable(false);
         textArea.setLineWrap(true);
         textArea.setWrapStyleWord(true);
-        Font mono = new Font(Font.MONOSPACED, Font.PLAIN, textArea.getFont().getSize());
-        textArea.setFont(mono);
+        UiTheme.styleTextArea(textArea);
         JScrollPane scrollPane = new JScrollPane(textArea);
+        scrollPane.setBorder(BorderFactory.createLineBorder(UiTheme.BORDER, 1, true));
+        scrollPane.getViewport().setBackground(UiTheme.LOG_BG);
         scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
+        setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createTitledBorder(
+                        BorderFactory.createLineBorder(UiTheme.BORDER, 1, true),
+                        "日志",
+                        javax.swing.border.TitledBorder.LEFT,
+                        javax.swing.border.TitledBorder.TOP,
+                        UiTheme.FONT_LABEL,
+                        UiTheme.TITLE_TEXT
+                ),
+                BorderFactory.createEmptyBorder(4, 8, 8, 8)
+        ));
         add(scrollPane, BorderLayout.CENTER);
     }
 

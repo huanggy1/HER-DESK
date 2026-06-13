@@ -5,13 +5,22 @@ import com.herdesk.common.ConnectionMode;
 import com.herdesk.common.LogPanel;
 import com.herdesk.common.Protocol;
 import com.herdesk.common.QualityLevel;
+import com.herdesk.common.RelayAuth;
 import com.herdesk.common.RelayConnector;
+import com.herdesk.common.RoomIdGenerator;
 import com.herdesk.common.ScreenGeometry;
+import com.herdesk.common.UiTheme;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
+import java.awt.Color;
+import java.awt.Dimension;
 import java.awt.FlowLayout;
+import java.awt.GraphicsDevice;
+import java.awt.GraphicsEnvironment;
 import java.awt.GridLayout;
 import java.awt.Rectangle;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
@@ -19,14 +28,15 @@ import java.awt.event.MouseEvent;
 import java.awt.event.MouseWheelEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
-import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JLayeredPane;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
+import javax.swing.border.Border;
 
 /**
  * 控制端 Swing 界面。
@@ -41,14 +51,19 @@ public class ClientApp {
     private JTextField relayHostField;
     private JTextField relayPortField;
     private JTextField roomIdField;
+    private JTextField roomPasswordField;
     private JButton connectButton;
     private JButton disconnectButton;
     private JButton fullscreenButton;
     private JButton exitFullscreenButton;
-    private JLabel fullscreenFpsLabel;
+    private JPanel exitFullscreenOverlay;
+    private JFrame fullscreenFrame;
+    private JLayeredPane fullscreenLayeredPane;
+    private JPanel viewCard;
+    private Border viewPanelBorder;
+    private GraphicsDevice fullscreenDevice;
     private JPanel topPanel;
     private JPanel bottomPanel;
-    private JPanel fullscreenBar;
     private boolean fullscreen;
     private Rectangle restoredBounds;
     private JLabel statusLabel;
@@ -69,8 +84,10 @@ public class ClientApp {
     }
 
     private void createAndShowUi() {
+        UiTheme.install();
         frame = new JFrame("Her Desk - 控制端");
         frame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+        UiTheme.styleFrame(frame);
         frame.addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
@@ -82,75 +99,93 @@ public class ClientApp {
             }
         });
 
-        JPanel root = new JPanel(new BorderLayout(8, 8));
-        root.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
+        JPanel root = new JPanel(new BorderLayout(0, 10));
+        root.setBackground(UiTheme.BACKGROUND);
+        root.add(UiTheme.createHeader("Her Desk 控制端", "连接并远程操作被控端桌面"), BorderLayout.NORTH);
 
-        topPanel = new JPanel(new BorderLayout(8, 8));
+        JPanel body = UiTheme.createRootPanel();
+        body.setLayout(new BorderLayout(0, 10));
 
-        JPanel modeRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        modeRow.add(new JLabel("连接模式:"));
+        topPanel = UiTheme.createCard("连接设置");
+        topPanel.setLayout(new BorderLayout(8, 10));
+
+        JPanel modeRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 4));
+        modeRow.setOpaque(false);
+        JLabel modeLabel = new JLabel("连接模式");
+        UiTheme.styleLabel(modeLabel);
+        modeRow.add(modeLabel);
         modeBox = new JComboBox<ConnectionMode>(ConnectionMode.values());
+        UiTheme.styleComboBox(modeBox);
         modeBox.addActionListener(e -> switchModePanel());
         modeRow.add(modeBox);
-        modeRow.add(new JLabel("画质:"));
+        JLabel qualityLabel = new JLabel("画质");
+        UiTheme.styleLabel(qualityLabel);
+        modeRow.add(qualityLabel);
         qualityBox = new JComboBox<QualityLevel>(QualityLevel.values());
+        UiTheme.styleComboBox(qualityBox);
         qualityBox.setSelectedItem(QualityLevel.BALANCED);
         qualityBox.addActionListener(e -> onQualityChanged());
         modeRow.add(qualityBox);
         topPanel.add(modeRow, BorderLayout.NORTH);
 
         modeCardPanel = new JPanel(new CardLayout());
+        modeCardPanel.setOpaque(false);
         modeCardPanel.add(createDirectPanel(), ConnectionMode.DIRECT.name());
         modeCardPanel.add(createRelayPanel(), ConnectionMode.RELAY.name());
         topPanel.add(modeCardPanel, BorderLayout.CENTER);
 
-        JPanel actionRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        connectButton = new JButton("连接");
-        disconnectButton = new JButton("断开");
+        JPanel actionRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        actionRow.setOpaque(false);
+        connectButton = UiTheme.createPrimaryButton("连接");
+        disconnectButton = UiTheme.createDangerButton("断开");
         disconnectButton.setEnabled(false);
         connectButton.addActionListener(e -> connect());
         disconnectButton.addActionListener(e -> disconnect());
-        actionRow.add(connectButton);
-        actionRow.add(disconnectButton);
-        fullscreenButton = new JButton("全屏");
+        fullscreenButton = UiTheme.createSecondaryButton("全屏");
         fullscreenButton.setEnabled(false);
         fullscreenButton.addActionListener(e -> enterFullscreen());
+        actionRow.add(connectButton);
+        actionRow.add(disconnectButton);
         actionRow.add(fullscreenButton);
         topPanel.add(actionRow, BorderLayout.SOUTH);
 
         viewPanel = new RemoteViewPanel();
+        viewPanelBorder = viewPanel.getBorder();
         frameScheduler = new FrameDisplayScheduler(image -> viewPanel.updateFrame(image));
         bindInputListeners();
 
-        fullscreenBar = new JPanel(new BorderLayout(8, 0));
-        fullscreenBar.setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
-        fullscreenBar.setVisible(false);
-        exitFullscreenButton = new JButton("退出全屏");
+        exitFullscreenButton = UiTheme.createSecondaryButton("退出全屏");
         exitFullscreenButton.addActionListener(e -> exitFullscreen());
-        JPanel fullscreenBarLeft = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        fullscreenBarLeft.add(exitFullscreenButton);
-        fullscreenBarLeft.add(new JLabel("全屏模式 — Esc 退出"));
-        fullscreenBar.add(fullscreenBarLeft, BorderLayout.WEST);
-        fullscreenFpsLabel = new JLabel("帧率: -");
-        fullscreenBar.add(fullscreenFpsLabel, BorderLayout.EAST);
+        exitFullscreenOverlay = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 0));
+        exitFullscreenOverlay.setOpaque(true);
+        exitFullscreenOverlay.setBackground(new Color(0, 0, 0, 160));
+        exitFullscreenOverlay.add(exitFullscreenButton);
 
-        JPanel centerPanel = new JPanel(new BorderLayout(0, 0));
-        centerPanel.add(fullscreenBar, BorderLayout.NORTH);
-        centerPanel.add(viewPanel, BorderLayout.CENTER);
+        viewCard = UiTheme.createCard("远程画面");
+        viewCard.setLayout(new BorderLayout());
+        viewCard.add(viewPanel, BorderLayout.CENTER);
 
-        bottomPanel = new JPanel(new BorderLayout(4, 4));
+        JPanel centerPanel = new JPanel(new BorderLayout(0, 6));
+        centerPanel.setOpaque(false);
+        centerPanel.add(viewCard, BorderLayout.CENTER);
+
+        bottomPanel = new JPanel(new BorderLayout(6, 6));
+        bottomPanel.setOpaque(false);
+        JPanel statusRow = UiTheme.createStatusBar();
         statusLabel = new JLabel("状态: 未连接");
+        UiTheme.styleStatusLabel(statusLabel);
         fpsLabel = new JLabel("帧率: -");
-        JPanel statusRow = new JPanel(new BorderLayout());
+        UiTheme.styleStatusLabel(fpsLabel);
         statusRow.add(statusLabel, BorderLayout.WEST);
         statusRow.add(fpsLabel, BorderLayout.EAST);
         bottomPanel.add(statusRow, BorderLayout.NORTH);
         logPanel = new LogPanel(8);
         bottomPanel.add(logPanel, BorderLayout.CENTER);
 
-        root.add(topPanel, BorderLayout.NORTH);
-        root.add(centerPanel, BorderLayout.CENTER);
-        root.add(bottomPanel, BorderLayout.SOUTH);
+        body.add(topPanel, BorderLayout.NORTH);
+        body.add(centerPanel, BorderLayout.CENTER);
+        body.add(bottomPanel, BorderLayout.SOUTH);
+        root.add(body, BorderLayout.CENTER);
 
         frame.setContentPane(root);
         frame.setSize(1100, 860);
@@ -210,27 +245,52 @@ public class ClientApp {
     }
 
     private JPanel createDirectPanel() {
-        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        panel.add(new JLabel("被控端 IP:"));
-        hostField = new JTextField("192.168.1.100", 14);
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 4));
+        panel.setOpaque(false);
+        JLabel hostLabel = new JLabel("被控端 IP");
+        UiTheme.styleLabel(hostLabel);
+        panel.add(hostLabel);
+        hostField = new JTextField("192.168.1.100", 16);
+        UiTheme.styleNetworkField(hostField);
         panel.add(hostField);
-        panel.add(new JLabel("端口:"));
-        portField = new JTextField(String.valueOf(Protocol.DEFAULT_PORT), 6);
+        JLabel portLabel = new JLabel("端口");
+        UiTheme.styleLabel(portLabel);
+        panel.add(portLabel);
+        portField = new JTextField(String.valueOf(Protocol.DEFAULT_PORT), 8);
+        UiTheme.styleNetworkField(portField);
         panel.add(portField);
         return panel;
     }
 
     private JPanel createRelayPanel() {
-        JPanel panel = new JPanel(new GridLayout(1, 6, 8, 0));
-        panel.add(new JLabel("中继地址:"));
-        relayHostField = new JTextField("your-server.com", 14);
+        JPanel panel = new JPanel(new GridLayout(3, 4, 10, 8));
+        panel.setOpaque(false);
+        JLabel h1 = new JLabel("中继地址");
+        UiTheme.styleLabel(h1);
+        panel.add(h1);
+        relayHostField = new JTextField("198.176.62.33", 18);
+        UiTheme.styleNetworkField(relayHostField);
         panel.add(relayHostField);
-        panel.add(new JLabel("中继端口:"));
-        relayPortField = new JTextField(String.valueOf(RelayConnector.DEFAULT_RELAY_PORT), 6);
+        JLabel h2 = new JLabel("中继端口");
+        UiTheme.styleLabel(h2);
+        panel.add(h2);
+        relayPortField = new JTextField("11111", 8);
+        UiTheme.styleNetworkField(relayPortField);
         panel.add(relayPortField);
-        panel.add(new JLabel("房间号:"));
-        roomIdField = new JTextField("room001", 10);
+        JLabel h3 = new JLabel("房间号");
+        UiTheme.styleLabel(h3);
+        panel.add(h3);
+        roomIdField = new JTextField(12);
+        UiTheme.styleNetworkField(roomIdField);
         panel.add(roomIdField);
+        JLabel h4 = new JLabel("房间密码");
+        UiTheme.styleLabel(h4);
+        panel.add(h4);
+        roomPasswordField = new JTextField(RelayAuth.DEFAULT_PASSWORD, 12);
+        UiTheme.styleNetworkField(roomPasswordField);
+        panel.add(roomPasswordField);
+        panel.add(new JLabel());
+        panel.add(new JLabel());
         return panel;
     }
 
@@ -301,25 +361,73 @@ public class ClientApp {
             return;
         }
         restoredBounds = frame.getBounds();
-        topPanel.setVisible(false);
-        bottomPanel.setVisible(false);
-        fullscreenBar.setVisible(true);
         fullscreen = true;
-        frame.setExtendedState(JFrame.MAXIMIZED_BOTH);
+
+        viewCard.remove(viewPanel);
+        viewPanel.setBorder(null);
+
+        fullscreenDevice = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice();
+        fullscreenFrame = new JFrame();
+        fullscreenFrame.setUndecorated(true);
+        fullscreenFrame.setBackground(Color.BLACK);
+        fullscreenFrame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+        fullscreenFrame.addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosing(WindowEvent e) {
+                exitFullscreen();
+            }
+        });
+
+        fullscreenLayeredPane = new JLayeredPane();
+        fullscreenLayeredPane.setLayout(null);
+        fullscreenLayeredPane.add(viewPanel, JLayeredPane.DEFAULT_LAYER);
+        fullscreenLayeredPane.add(exitFullscreenOverlay, JLayeredPane.PALETTE_LAYER);
+        fullscreenFrame.setContentPane(fullscreenLayeredPane);
+        fullscreenFrame.addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentResized(ComponentEvent e) {
+                layoutFullscreenLayers();
+            }
+        });
+
+        try {
+            fullscreenDevice.setFullScreenWindow(fullscreenFrame);
+        } catch (Exception ex) {
+            Rectangle screenBounds = fullscreenDevice.getDefaultConfiguration().getBounds();
+            fullscreenFrame.setBounds(screenBounds);
+            fullscreenFrame.setVisible(true);
+        }
+        layoutFullscreenLayers();
+
+        frame.setVisible(false);
         viewPanel.requestFocusInWindow();
-        logPanel.append(AppLogger.Level.INFO, "进入全屏模式");
-        frame.revalidate();
-        frame.repaint();
+        logPanel.append(AppLogger.Level.INFO, "进入独占全屏模式");
     }
 
     private void exitFullscreen() {
         if (!fullscreen) {
             return;
         }
-        topPanel.setVisible(true);
-        bottomPanel.setVisible(true);
-        fullscreenBar.setVisible(false);
         fullscreen = false;
+
+        if (fullscreenDevice != null) {
+            fullscreenDevice.setFullScreenWindow(null);
+        }
+        if (fullscreenLayeredPane != null) {
+            fullscreenLayeredPane.remove(viewPanel);
+            fullscreenLayeredPane.remove(exitFullscreenOverlay);
+        }
+        if (fullscreenFrame != null) {
+            fullscreenFrame.dispose();
+            fullscreenFrame = null;
+        }
+        fullscreenLayeredPane = null;
+        fullscreenDevice = null;
+
+        viewPanel.setBorder(viewPanelBorder);
+        viewCard.add(viewPanel, BorderLayout.CENTER);
+
+        frame.setVisible(true);
         frame.setExtendedState(JFrame.NORMAL);
         if (restoredBounds != null) {
             frame.setBounds(restoredBounds);
@@ -333,10 +441,32 @@ public class ClientApp {
         frame.repaint();
     }
 
+    private void layoutFullscreenLayers() {
+        if (!fullscreen || fullscreenLayeredPane == null) {
+            return;
+        }
+        Dimension size = fullscreenLayeredPane.getSize();
+        if (size.width <= 0 || size.height <= 0) {
+            return;
+        }
+        fullscreenLayeredPane.setPreferredSize(size);
+        viewPanel.setBounds(0, 0, size.width, size.height);
+        Dimension overlaySize = exitFullscreenOverlay.getPreferredSize();
+        int overlayWidth = Math.max(overlaySize.width + 16, 120);
+        int overlayHeight = Math.max(overlaySize.height + 8, 40);
+        exitFullscreenOverlay.setBounds(
+                size.width - overlayWidth - 20,
+                20,
+                overlayWidth,
+                overlayHeight
+        );
+        viewPanel.revalidate();
+        viewPanel.repaint();
+    }
+
     private void updateFpsLabels(int fps) {
         String text = "帧率: " + (fps > 0 ? fps + " FPS" : "-");
         fpsLabel.setText(text);
-        fullscreenFpsLabel.setText(text);
     }
 
     private void sendMouseMove(MouseEvent e) {
@@ -374,6 +504,7 @@ public class ClientApp {
             if (mode == ConnectionMode.RELAY) {
                 String relayHost = relayHostField.getText().trim();
                 String roomId = roomIdField.getText().trim();
+                String password = roomPasswordField.getText().trim();
                 int relayPort = parsePort(relayPortField.getText().trim(), RelayConnector.DEFAULT_RELAY_PORT);
                 if (relayHost.isEmpty()) {
                     String msg = "请输入中继地址";
@@ -382,9 +513,10 @@ public class ClientApp {
                     return;
                 }
                 RelayConnector.validateRoomId(roomId);
+                RelayAuth.validatePassword(password);
                 logPanel.append(AppLogger.Level.INFO,
                         "用户发起连接：公网中继 " + relayHost + ":" + relayPort + "，房间 " + roomId);
-                client.connectViaRelay(relayHost, relayPort, roomId);
+                client.connectViaRelay(relayHost, relayPort, roomId, password);
             } else {
                 String host = hostField.getText().trim();
                 int port = parsePort(portField.getText().trim(), Protocol.DEFAULT_PORT);
@@ -438,6 +570,7 @@ public class ClientApp {
         relayHostField.setEnabled(enabled);
         relayPortField.setEnabled(enabled);
         roomIdField.setEnabled(enabled);
+        roomPasswordField.setEnabled(enabled);
         connectButton.setEnabled(enabled);
         disconnectButton.setEnabled(!enabled);
         qualityBox.setEnabled(enabled);

@@ -1,11 +1,16 @@
 package com.herdesk.client;
 
 import com.herdesk.common.ScreenGeometry;
+import com.herdesk.common.UiTheme;
+import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 import java.awt.image.BufferedImage;
+import javax.swing.BorderFactory;
 import javax.swing.JPanel;
 
 /**
@@ -23,7 +28,11 @@ public class RemoteViewPanel extends JPanel {
 
     public RemoteViewPanel() {
         setFocusable(true);
-        setBackground(java.awt.Color.BLACK);
+        setBackground(Color.BLACK);
+        setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(UiTheme.BORDER, 2, true),
+                BorderFactory.createEmptyBorder(4, 4, 4, 4)
+        ));
         addComponentListener(new ComponentAdapter() {
             @Override
             public void componentResized(ComponentEvent e) {
@@ -112,8 +121,19 @@ public class RemoteViewPanel extends JPanel {
         super.paintComponent(g);
         BufferedImage image = frameImage;
         if (image == null || drawWidth <= 0 || drawHeight <= 0) {
-            g.setColor(java.awt.Color.DARK_GRAY);
-            g.drawString("等待连接...", 20, 30);
+            Graphics2D g2 = (Graphics2D) g.create();
+            try {
+                g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+                g2.setColor(new Color(0x2A3A4A));
+                g2.fillRect(0, 0, getWidth(), getHeight());
+                g2.setColor(UiTheme.MUTED_TEXT);
+                g2.setFont(UiTheme.FONT_BODY);
+                String text = "等待连接...";
+                int tw = g2.getFontMetrics().stringWidth(text);
+                g2.drawString(text, Math.max(20, (getWidth() - tw) / 2), getHeight() / 2);
+            } finally {
+                g2.dispose();
+            }
             return;
         }
         g.drawImage(image, drawX, drawY, drawWidth, drawHeight, this);

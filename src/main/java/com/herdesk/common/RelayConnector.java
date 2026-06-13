@@ -46,13 +46,15 @@ public final class RelayConnector {
     /**
      * 被控端：注册房间并等待控制端接入。
      */
-    public static Socket registerServer(String relayHost, int relayPort, String roomId) throws IOException {
+    public static Socket registerServer(String relayHost, int relayPort, String roomId, String password)
+            throws IOException {
         validateRoomId(roomId);
+        RelayAuth.validatePassword(password);
         step(AppLogger.Level.INFO, "校验房间号通过: " + roomId);
         Socket socket = createSocket(relayHost, relayPort);
         try {
             step(AppLogger.Level.INFO, "发送 REGISTER，房间号 " + roomId);
-            sendLine(socket, "REGISTER " + roomId);
+            sendLine(socket, "REGISTER " + roomId + " " + password);
             String response = readLine(socket.getInputStream());
             step(AppLogger.Level.INFO, "收到中继响应: " + response);
             if (!"OK WAITING".equals(response)) {
@@ -70,13 +72,15 @@ public final class RelayConnector {
     /**
      * 控制端：加入房间并与被控端建立透明隧道。
      */
-    public static Socket joinClient(String relayHost, int relayPort, String roomId) throws IOException {
+    public static Socket joinClient(String relayHost, int relayPort, String roomId, String password)
+            throws IOException {
         validateRoomId(roomId);
+        RelayAuth.validatePassword(password);
         step(AppLogger.Level.INFO, "校验房间号通过: " + roomId);
         Socket socket = createSocket(relayHost, relayPort);
         try {
             step(AppLogger.Level.INFO, "发送 JOIN，房间号 " + roomId);
-            sendLine(socket, "JOIN " + roomId);
+            sendLine(socket, "JOIN " + roomId + " " + password);
             String response = readLine(socket.getInputStream());
             step(AppLogger.Level.INFO, "收到中继响应: " + response);
             if (!"OK CONNECTED".equals(response)) {
@@ -152,7 +156,24 @@ public final class RelayConnector {
         if ("ERROR ROOM_NOT_FOUND".equals(response)) {
             return prefix + "：房间未找到（被控端可能未注册或房间号不一致）";
         }
+        if ("ERROR INVALID_PASSWORD".equals(response)) {
+            return prefix + "：房间密码错误";
+        }
         return prefix + "：" + response;
+    }
+
+    /**
+     * 解析 REGISTER/JOIN 命令参数：房间号 + 密码。
+     */
+    public static String[] parseRoomAndPassword(String commandLine) throws IOException {
+        if (commandLine == null || commandLine.trim().isEmpty()) {
+            throw new IOException("命令不能为空");
+        }
+        String[] parts = commandLine.trim().split("\\s+");
+        if (parts.length < 2) {
+            throw new IOException("命令格式无效，需要：房间号 密码");
+        }
+        return new String[]{parts[0], parts[1]};
     }
 
     private static void closeQuietly(Socket socket) {

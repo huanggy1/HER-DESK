@@ -75,15 +75,15 @@ public class RemoteDesktopClient {
     }
 
     public synchronized void connect(String host, int port) {
-        connectInternal(host, port, false, null, 0, null);
+        connectInternal(host, port, false, null, 0, null, null);
     }
 
-    public synchronized void connectViaRelay(String relayHost, int relayPort, String roomId) {
-        connectInternal(relayHost, relayPort, true, relayHost, relayPort, roomId);
+    public synchronized void connectViaRelay(String relayHost, int relayPort, String roomId, String password) {
+        connectInternal(relayHost, relayPort, true, relayHost, relayPort, roomId, password);
     }
 
     private synchronized void connectInternal(String host, int port, boolean relayMode,
-                                              String relayHost, int relayPort, String roomId) {
+                                              String relayHost, int relayPort, String roomId, String password) {
         if (connected.get() || connecting.get()) {
             return;
         }
@@ -100,13 +100,14 @@ public class RemoteDesktopClient {
 
         final boolean useRelay = relayMode;
         final String joinRoomId = roomId;
+        final String joinPassword = password;
         final String joinRelayHost = relayHost;
         final int joinRelayPort = relayPort;
         Thread connectThread = new Thread(new Runnable() {
             @Override
             public void run() {
                 if (useRelay) {
-                    doConnectViaRelay(joinRelayHost, joinRelayPort, joinRoomId);
+                    doConnectViaRelay(joinRelayHost, joinRelayPort, joinRoomId, joinPassword);
                 } else {
                     doConnect();
                 }
@@ -116,12 +117,12 @@ public class RemoteDesktopClient {
         connectThread.start();
     }
 
-    private void doConnectViaRelay(String relayHost, int relayPort, String roomId) {
+    private void doConnectViaRelay(String relayHost, int relayPort, String roomId, String password) {
         String context = "连接中继 " + relayHost + ":" + relayPort + " 房间 " + roomId;
         bindRelayStepLogger();
         try {
             logInfo("开始中继连接流程");
-            Socket socket = RelayConnector.joinClient(relayHost, relayPort, roomId);
+            Socket socket = RelayConnector.joinClient(relayHost, relayPort, roomId, password);
             logInfo("中继隧道就绪，进入 HDRD 握手");
             establishSession(socket);
         } catch (Exception e) {

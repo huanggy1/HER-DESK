@@ -49,6 +49,9 @@ public final class AppLogger {
             if (message.contains("房间未找到")) {
                 return message;
             }
+            if (message.contains("房间密码错误")) {
+                return message;
+            }
             if (message.contains("中继加入失败：房间未找到")) {
                 return message;
             }
