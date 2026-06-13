@@ -82,6 +82,27 @@ public class RemoteViewPanel extends JPanel {
         repaint();
     }
 
+    public synchronized BufferedImage getDisplayImage() {
+        return frameImage;
+    }
+
+    /**
+     * 将另一块面板的画面与尺寸同步到本面板（用于进入全屏时复制当前帧）。
+     */
+    public void copyDisplayFrom(RemoteViewPanel source) {
+        if (source == null) {
+            return;
+        }
+        setRemoteScreenSize(source.getRemoteWidth(), source.getRemoteHeight());
+        BufferedImage image = source.getDisplayImage();
+        if (image != null) {
+            updateFrame(image);
+        } else {
+            clearFrame();
+        }
+        refreshDisplayBounds();
+    }
+
     public int getRemoteWidth() {
         return remoteWidth;
     }

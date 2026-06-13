@@ -13,6 +13,7 @@ import com.herdesk.common.UiTheme;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
 import java.awt.Color;
+import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.GraphicsDevice;
 import java.awt.GraphicsEnvironment;
@@ -59,9 +60,9 @@ public class ClientApp {
     private JButton exitFullscreenButton;
     private JPanel fullscreenGlassPane;
     private JFrame fullscreenFrame;
+    private GraphicsDevice fullscreenDevice;
     private JPanel viewCard;
     private Border viewPanelBorder;
-    private GraphicsDevice fullscreenDevice;
     private JPanel topPanel;
     private JPanel bottomPanel;
     private boolean fullscreen;
@@ -152,7 +153,7 @@ public class ClientApp {
         viewPanel = new RemoteViewPanel();
         viewPanelBorder = viewPanel.getBorder();
         frameScheduler = new FrameDisplayScheduler(image -> viewPanel.updateFrame(image));
-        bindInputListeners();
+        bindInputListeners(viewPanel);
 
         exitFullscreenButton = UiTheme.createPrimaryButton("退出全屏");
         exitFullscreenButton.addActionListener(e -> exitFullscreen());
@@ -246,7 +247,7 @@ public class ClientApp {
         JLabel hostLabel = new JLabel("被控端 IP");
         UiTheme.styleLabel(hostLabel);
         panel.add(hostLabel);
-        hostField = new JTextField("192.168.1.100", 16);
+        hostField = new JTextField("192.168.31.5", 16);
         UiTheme.styleNetworkField(hostField);
         panel.add(hostField);
         JLabel portLabel = new JLabel("端口");
@@ -296,7 +297,7 @@ public class ClientApp {
         layout.show(modeCardPanel, mode.name());
     }
 
-    private void bindInputListeners() {
+    private void bindInputListeners(final RemoteViewPanel panel) {
         MouseAdapter mouseAdapter = new MouseAdapter() {
             @Override
             public void mouseMoved(MouseEvent e) {
@@ -310,7 +311,7 @@ public class ClientApp {
 
             @Override
             public void mousePressed(MouseEvent e) {
-                viewPanel.requestFocusInWindow();
+                panel.requestFocusInWindow();
                 sendMouseButton(e, true);
             }
 
@@ -324,15 +325,16 @@ public class ClientApp {
                 if (client == null || !client.isConnected()) {
                     return;
                 }
-                int[] remote = viewPanel.translateToRemote(e.getX(), e.getY());
+                RemoteViewPanel source = (RemoteViewPanel) e.getComponent();
+                int[] remote = source.translateToRemote(e.getX(), e.getY());
                 client.sendMouseWheel(remote[0], remote[1], e.getWheelRotation());
             }
         };
-        viewPanel.addMouseListener(mouseAdapter);
-        viewPanel.addMouseMotionListener(mouseAdapter);
-        viewPanel.addMouseWheelListener(mouseAdapter);
+        panel.addMouseListener(mouseAdapter);
+        panel.addMouseMotionListener(mouseAdapter);
+        panel.addMouseWheelListener(mouseAdapter);
 
-        viewPanel.addKeyListener(new KeyAdapter() {
+        panel.addKeyListener(new KeyAdapter() {
             @Override
             public void keyPressed(KeyEvent e) {
                 if (e.getKeyCode() == KeyEvent.VK_ESCAPE && fullscreen) {
@@ -356,33 +358,37 @@ public class ClientApp {
         if (fullscreen || client == null || !client.isConnected()) {
             return;
         }
+        destroyFullscreenResources();
+
         restoredBounds = frame.getBounds();
         fullscreen = true;
 
         viewCard.remove(viewPanel);
         viewPanel.setBorder(null);
 
-        ensureFullscreenFrame();
+        fullscreenDevice = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice();
+        fullscreenFrame = createFullscreenFrame();
         fullscreenFrame.add(viewPanel, BorderLayout.CENTER);
 
         detachExitFullscreenButton();
         fullscreenGlassPane = createFullscreenGlassPane();
         fullscreenFrame.setGlassPane(fullscreenGlassPane);
         fullscreenGlassPane.setVisible(true);
-
         fullscreenFrame.getRootPane().registerKeyboardAction(
                 e -> exitFullscreen(),
                 KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0),
                 JComponent.WHEN_IN_FOCUSED_WINDOW);
 
         try {
-            fullscreenDevice.setFullScreenWindow(fullscreenFrame);
-        } catch (Exception ex) {
             Rectangle screenBounds = fullscreenDevice.getDefaultConfiguration().getBounds();
             fullscreenFrame.setBounds(screenBounds);
             fullscreenFrame.setVisible(true);
+            fullscreenFrame.toFront();
+            fullscreenFrame.requestFocus();
+        } catch (Exception ex) {
+            logPanel.append(AppLogger.Level.WARN, "全屏窗口显示异常：" + ex.getMessage());
         }
-        refreshFullscreenLayout();
+        applyFullscreenLayout();
         scheduleDeferredFullscreenLayout();
 
         frame.setVisible(false);
@@ -390,33 +396,52 @@ public class ClientApp {
         logPanel.append(AppLogger.Level.INFO, "进入独占全屏模式");
     }
 
-    private void ensureFullscreenFrame() {
-        if (fullscreenFrame != null) {
-            return;
-        }
-        fullscreenDevice = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice();
-        fullscreenFrame = new JFrame();
-        fullscreenFrame.setUndecorated(true);
-        fullscreenFrame.setBackground(Color.BLACK);
-        fullscreenFrame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
-        fullscreenFrame.addWindowListener(new WindowAdapter() {
+    private JFrame createFullscreenFrame() {
+        JFrame window = new JFrame();
+        window.setUndecorated(true);
+        window.setBackground(Color.BLACK);
+        window.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+        window.addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
                 exitFullscreen();
             }
         });
-        fullscreenFrame.setLayout(new BorderLayout());
-        fullscreenFrame.addComponentListener(new ComponentAdapter() {
+        window.setLayout(new BorderLayout());
+        window.addComponentListener(new ComponentAdapter() {
             @Override
             public void componentResized(ComponentEvent e) {
-                refreshFullscreenLayout();
+                if (fullscreen) {
+                    applyFullscreenLayout();
+                }
             }
 
             @Override
             public void componentShown(ComponentEvent e) {
-                refreshFullscreenLayout();
+                if (fullscreen) {
+                    applyFullscreenLayout();
+                }
             }
         });
+        return window;
+    }
+
+    /**
+     * 退出全屏时彻底回收窗口、玻璃层与显示设备绑定，保证下次进入与首次一致。
+     */
+    private void destroyFullscreenResources() {
+        if (fullscreenFrame != null) {
+            fullscreenFrame.getRootPane().unregisterKeyboardAction(
+                    KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0));
+            detachExitFullscreenButton();
+            fullscreenFrame.setGlassPane(new JPanel());
+            fullscreenFrame.remove(viewPanel);
+            fullscreenFrame.setVisible(false);
+            fullscreenFrame.dispose();
+            fullscreenFrame = null;
+        }
+        fullscreenGlassPane = null;
+        fullscreenDevice = null;
     }
 
     private void detachExitFullscreenButton() {
@@ -443,33 +468,27 @@ public class ClientApp {
     }
 
     private void scheduleDeferredFullscreenLayout() {
-        SwingUtilities.invokeLater(this::refreshFullscreenLayout);
-        Timer timer = new Timer(50, e -> {
+        SwingUtilities.invokeLater(this::applyFullscreenLayout);
+        Timer timer = new Timer(100, e -> {
             ((Timer) e.getSource()).stop();
-            refreshFullscreenLayout();
+            applyFullscreenLayout();
         });
         timer.setRepeats(false);
         timer.start();
     }
 
-    private void refreshFullscreenLayout() {
+    private void applyFullscreenLayout() {
         if (!fullscreen || fullscreenFrame == null) {
             return;
         }
-        int width = fullscreenFrame.getWidth();
-        int height = fullscreenFrame.getHeight();
-        if (width <= 0 || height <= 0) {
-            Rectangle bounds = resolveFullscreenBounds();
-            if (bounds.width > 0 && bounds.height > 0) {
-                fullscreenFrame.setSize(bounds.width, bounds.height);
-                width = bounds.width;
-                height = bounds.height;
-            }
+        Rectangle bounds = fullscreenDevice != null
+                ? fullscreenDevice.getDefaultConfiguration().getBounds()
+                : fullscreenFrame.getBounds();
+        if (bounds.width > 0 && bounds.height > 0) {
+            fullscreenFrame.setSize(bounds.width, bounds.height);
+            viewPanel.setPreferredSize(new Dimension(bounds.width, bounds.height));
         }
         fullscreenFrame.validate();
-        if (width > 0 && height > 0) {
-            viewPanel.setSize(width, height);
-        }
         viewPanel.refreshDisplayBounds();
         viewPanel.revalidate();
         viewPanel.repaint();
@@ -480,36 +499,13 @@ public class ClientApp {
         fullscreenFrame.repaint();
     }
 
-    private Rectangle resolveFullscreenBounds() {
-        if (fullscreenDevice != null) {
-            return fullscreenDevice.getDefaultConfiguration().getBounds();
-        }
-        if (fullscreenFrame != null) {
-            return fullscreenFrame.getBounds();
-        }
-        return new Rectangle(0, 0, 0, 0);
-    }
-
     private void exitFullscreen() {
         if (!fullscreen) {
             return;
         }
         fullscreen = false;
 
-        if (fullscreenDevice != null) {
-            fullscreenDevice.setFullScreenWindow(null);
-        }
-        if (fullscreenFrame != null) {
-            fullscreenFrame.getRootPane().unregisterKeyboardAction(
-                    KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0));
-            fullscreenFrame.remove(viewPanel);
-            detachExitFullscreenButton();
-            if (fullscreenGlassPane != null) {
-                fullscreenGlassPane.setVisible(false);
-            }
-            fullscreenFrame.setVisible(false);
-        }
-        fullscreenGlassPane = null;
+        destroyFullscreenResources();
 
         viewPanel.setBorder(viewPanelBorder);
         viewCard.add(viewPanel, BorderLayout.CENTER);
@@ -539,7 +535,8 @@ public class ClientApp {
         if (client == null || !client.isConnected()) {
             return;
         }
-        int[] remote = viewPanel.translateToRemote(e.getX(), e.getY());
+        RemoteViewPanel source = (RemoteViewPanel) e.getComponent();
+        int[] remote = source.translateToRemote(e.getX(), e.getY());
         client.sendMouseMove(remote[0], remote[1]);
     }
 
@@ -547,7 +544,8 @@ public class ClientApp {
         if (client == null || !client.isConnected()) {
             return;
         }
-        int[] remote = viewPanel.translateToRemote(e.getX(), e.getY());
+        RemoteViewPanel source = (RemoteViewPanel) e.getComponent();
+        int[] remote = source.translateToRemote(e.getX(), e.getY());
         int button = Protocol.MOUSE_LEFT;
         if (SwingUtilities.isRightMouseButton(e)) {
             button = Protocol.MOUSE_RIGHT;
