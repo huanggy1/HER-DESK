@@ -12,8 +12,11 @@ import javax.imageio.ImageIO;
  */
 public class DeltaFrameDecoder {
 
+    /** 当前累积的画面画布 */
     private BufferedImage canvas;
+    /** 画布逻辑宽度 */
     private int screenWidth;
+    /** 画布逻辑高度 */
     private int screenHeight;
 
     public BufferedImage getCanvas() {
@@ -28,12 +31,18 @@ public class DeltaFrameDecoder {
         return screenHeight;
     }
 
+    /** 清空画布，需重新接收全帧 */
     public void reset() {
         canvas = null;
         screenWidth = 0;
         screenHeight = 0;
     }
 
+    /**
+     * 应用全帧：解码 JPEG 并设为画布。
+     * <p>
+     * 若 JPEG 尺寸与声明不一致，缩放至目标宽高。
+     */
     public BufferedImage applyFullFrame(int width, int height, byte[] jpegData) throws IOException {
         screenWidth = width;
         screenHeight = height;
@@ -51,6 +60,11 @@ public class DeltaFrameDecoder {
         return canvas;
     }
 
+    /**
+     * 应用差分帧：将各区块 JPEG 绘制到画布对应位置。
+     *
+     * @throws IOException 尚未收到全帧
+     */
     public BufferedImage applyDeltaFrame(List<DeltaFrameEncoder.BlockPatch> patches) throws IOException {
         if (canvas == null) {
             throw new IOException("尚未收到全帧，无法应用差分");

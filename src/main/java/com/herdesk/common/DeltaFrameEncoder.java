@@ -19,28 +19,43 @@ import javax.imageio.stream.ImageOutputStream;
  */
 public class DeltaFrameEncoder {
 
+    /** 区块边长（像素） */
     private final int blockSize;
+    /** 上一帧完整图像（用于差分与补丁合并） */
     private BufferedImage previousFrame;
+    /** 各区块像素哈希，用于快速检测变化 */
     private long[][] previousHashes;
+    /** 当前画面宽度 */
     private int screenWidth;
+    /** 当前画面高度 */
     private int screenHeight;
+    /** 横向区块数 */
     private int blocksX;
+    /** 纵向区块数 */
     private int blocksY;
+    /** JPEG 压缩质量 */
     private float jpegQuality = QualityLevel.BALANCED.getJpegQuality();
 
     public DeltaFrameEncoder(int blockSize) {
         this.blockSize = blockSize;
     }
 
+    /** 设置 JPEG 质量，限制在 0.1~1.0 */
     public void setJpegQuality(float jpegQuality) {
         this.jpegQuality = Math.max(0.1f, Math.min(1.0f, jpegQuality));
     }
 
+    /** 清空上一帧状态，下次 encode 将发送全帧 */
     public void reset() {
         previousFrame = null;
         previousHashes = null;
     }
 
+    /**
+     * 编码当前帧。
+     * <p>
+     * 首帧或尺寸变化 → 全帧；无变化 → empty；有变化 → 差分区块列表。
+     */
     public EncodedFrame encode(BufferedImage current) throws IOException {
         if (current == null) {
             throw new IllegalArgumentException("当前帧不能为空");
@@ -65,6 +80,7 @@ public class DeltaFrameEncoder {
         return EncodedFrame.deltaFrame(patches);
     }
 
+    /** 按当前尺寸初始化区块网格 */
     private void initBlockState(int width, int height) {
         screenWidth = width;
         screenHeight = height;
@@ -73,6 +89,7 @@ public class DeltaFrameEncoder {
         previousHashes = new long[blocksY][blocksX];
     }
 
+    /** 计算所有区块哈希 */
     private long[][] computeAllHashes(BufferedImage image) {
         long[][] hashes = new long[blocksY][blocksX];
         for (int by = 0; by < blocksY; by++) {
@@ -83,6 +100,7 @@ public class DeltaFrameEncoder {
         return hashes;
     }
 
+    /** 仅更新变化区块的哈希 */
     private void updateHashes(BufferedImage image, List<BlockPatch> patches) {
         for (BlockPatch patch : patches) {
             int bx = patch.getX() / blockSize;
@@ -91,6 +109,7 @@ public class DeltaFrameEncoder {
         }
     }
 
+    /** 遍历区块，哈希不同则 JPEG 压缩该区块 */
     private List<BlockPatch> detectChangedBlocks(BufferedImage current) throws IOException {
         List<BlockPatch> patches = new ArrayList<BlockPatch>();
         for (int by = 0; by < blocksY; by++) {
@@ -110,6 +129,7 @@ public class DeltaFrameEncoder {
         return patches;
     }
 
+    /** 对区块内像素隔点采样计算哈希 */
     private long hashBlock(BufferedImage image, int blockX, int blockY) {
         int startX = blockX * blockSize;
         int startY = blockY * blockSize;
@@ -124,6 +144,7 @@ public class DeltaFrameEncoder {
         return hash;
     }
 
+    /** 将变化区块绘制到上一帧副本，保持基准同步 */
     private void applyPatches(BufferedImage target, BufferedImage source, List<BlockPatch> patches) {
         Graphics2D g = target.createGraphics();
         try {
@@ -138,6 +159,7 @@ public class DeltaFrameEncoder {
         }
     }
 
+    /** JPEG 压缩单张图像 */
     private byte[] encodeJpeg(BufferedImage image) throws IOException {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         ImageWriter writer = null;
@@ -181,12 +203,19 @@ public class DeltaFrameEncoder {
         return ScreenCaptureHelper.normalizeRgb(source);
     }
 
+    /** 编码结果：全帧、差分或空帧（三选一） */
     public static final class EncodedFrame {
+        /** 是否为全帧 */
         private final boolean fullFrame;
+        /** 是否无变化（跳过发送） */
         private final boolean empty;
+        /** 全帧宽度 */
         private final int width;
+        /** 全帧高度 */
         private final int height;
+        /** 全帧 JPEG */
         private final byte[] fullJpeg;
+        /** 差分区块列表 */
         private final List<BlockPatch> patches;
 
         private EncodedFrame(boolean fullFrame, boolean empty, int width, int height,
@@ -236,9 +265,13 @@ public class DeltaFrameEncoder {
         }
     }
 
+    /** 单个变化区块：左上角坐标 + JPEG 数据 */
     public static final class BlockPatch {
+        /** 区块左上角 X */
         private final int x;
+        /** 区块左上角 Y */
         private final int y;
+        /** 区块 JPEG 数据 */
         private final byte[] jpegData;
 
         public BlockPatch(int x, int y, byte[] jpegData) {

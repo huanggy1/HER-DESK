@@ -9,15 +9,25 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 带粘包/分包处理的 TCP 通道封装。
+ * <p>
+ * 发送/接收完整 HDRD 协议帧，写操作串行化。
  */
 public class NetworkChannel implements AutoCloseable {
 
+    /** 底层 TCP 套接字 */
     private final Socket socket;
+    /** 帧数据输入流 */
     private final DataInputStream in;
+    /** 帧数据输出流 */
     private final DataOutputStream out;
+    /** 通道是否已关闭 */
     private final AtomicBoolean closed = new AtomicBoolean(false);
+    /** 写锁，保证帧原子发送 */
     private final Object writeLock = new Object();
 
+    /**
+     * 包装已连接的 Socket，启用 TCP_NODELAY 与 keepAlive。
+     */
     public NetworkChannel(Socket socket) throws IOException {
         this.socket = socket;
         socket.setTcpNoDelay(true);
@@ -30,6 +40,11 @@ public class NetworkChannel implements AutoCloseable {
         return socket;
     }
 
+    /**
+     * 发送一帧：魔数 + 类型 + 长度 + 载荷。
+     *
+     * @throws IOException 连接已关闭或写入失败
+     */
     public void send(MessageType type, byte[] payload) throws IOException {
         if (closed.get()) {
             throw new IOException("连接已关闭");
@@ -46,6 +61,11 @@ public class NetworkChannel implements AutoCloseable {
         }
     }
 
+    /**
+     * 阻塞读取一帧；校验魔数与载荷长度。
+     *
+     * @throws IOException 连接已关闭、魔数不匹配或长度非法
+     */
     public ReceivedMessage receive() throws IOException {
         if (closed.get()) {
             throw new IOException("连接已关闭");
@@ -66,10 +86,12 @@ public class NetworkChannel implements AutoCloseable {
         return new ReceivedMessage(MessageType.fromCode(typeCode), payload);
     }
 
+    /** 连接是否仍可用（未关闭且 Socket 已连接） */
     public boolean isConnected() {
         return !closed.get() && socket.isConnected() && !socket.isClosed();
     }
 
+    /** 幂等关闭 Socket */
     @Override
     public void close() {
         if (closed.compareAndSet(false, true)) {
@@ -81,8 +103,11 @@ public class NetworkChannel implements AutoCloseable {
         }
     }
 
+    /** 接收到的单帧消息 */
     public static final class ReceivedMessage {
+        /** 消息类型 */
         private final MessageType type;
+        /** 载荷字节（可能为空数组） */
         private final byte[] payload;
 
         public ReceivedMessage(MessageType type, byte[] payload) {
@@ -99,6 +124,11 @@ public class NetworkChannel implements AutoCloseable {
         }
     }
 
+    /**
+     * 判断 IOException 是否表示对端已断开。
+     * <p>
+     * 匹配 EOF、Connection reset、Broken pipe 等常见断连消息。
+     */
     public static boolean isConnectionClosed(IOException e) {
         if (e instanceof EOFException) {
             return true;

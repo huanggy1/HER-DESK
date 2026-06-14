@@ -14,13 +14,21 @@ import java.awt.image.BufferedImage;
  */
 public final class ScreenGeometry {
 
+    /** 虚拟桌面左上角 X（逻辑坐标） */
     private final int originX;
+    /** 虚拟桌面左上角 Y（逻辑坐标） */
     private final int originY;
+    /** 捕获区域逻辑宽度 */
     private final int logicalWidth;
+    /** 捕获区域逻辑高度 */
     private final int logicalHeight;
+    /** 捕获图像像素宽度 */
     private final int pixelWidth;
+    /** 捕获图像像素高度 */
     private final int pixelHeight;
+    /** 水平缩放比（pixel / logical） */
     private final double scaleX;
+    /** 垂直缩放比（pixel / logical） */
     private final double scaleY;
 
     public ScreenGeometry(int originX, int originY,
@@ -69,6 +77,7 @@ public final class ScreenGeometry {
         return scaleY;
     }
 
+    /** 返回 Robot 截图用的逻辑边界矩形 */
     public Rectangle getCaptureBounds() {
         return new Rectangle(originX, originY, logicalWidth, logicalHeight);
     }
@@ -84,6 +93,8 @@ public final class ScreenGeometry {
 
     /**
      * 计算所有显示器的联合边界（虚拟桌面）。
+     * <p>
+     * 若合并结果无效，回退为 Toolkit 屏幕尺寸。
      */
     public static Rectangle computeVirtualBounds() {
         GraphicsEnvironment environment = GraphicsEnvironment.getLocalGraphicsEnvironment();

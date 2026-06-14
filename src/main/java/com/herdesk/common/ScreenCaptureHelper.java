@@ -15,17 +15,21 @@ import java.awt.image.BufferedImage;
  */
 public final class ScreenCaptureHelper {
 
+    /** 操作系统名称（小写），用于平台分支 */
     private static final String OS_NAME = System.getProperty("os.name", "").toLowerCase();
 
     private ScreenCaptureHelper() {
     }
 
+    /** 是否为 macOS */
     public static boolean isMac() {
         return OS_NAME.contains("mac");
     }
 
     /**
      * 探测屏幕几何并在逻辑分辨率下统一坐标（pixel = logical，scale = 1）。
+     * <p>
+     * 截图后缩放到逻辑尺寸，消除 Retina 缩放差异。
      */
     public static ScreenGeometry detect(Robot robot) {
         Rectangle bounds = resolveCaptureBounds();
@@ -45,6 +49,8 @@ public final class ScreenCaptureHelper {
 
     /**
      * 截图并返回逻辑分辨率的 RGB 图像。
+     * <p>
+     * geometry 为 null 时使用 {@link #resolveCaptureBounds()}。
      */
     public static BufferedImage capture(Robot robot, ScreenGeometry geometry) {
         Rectangle bounds = geometry != null
@@ -55,6 +61,8 @@ public final class ScreenCaptureHelper {
     }
 
     /**
+     * 确定截图区域。
+     * <p>
      * Mac 仅捕获主屏（避免虚拟桌面 union 在 Retina 下截屏异常），其他系统捕获虚拟桌面。
      */
     public static Rectangle resolveCaptureBounds() {
@@ -64,6 +72,7 @@ public final class ScreenCaptureHelper {
         return ScreenGeometry.computeVirtualBounds();
     }
 
+    /** 返回默认显示器的逻辑边界 */
     public static Rectangle getPrimaryScreenBounds() {
         GraphicsEnvironment environment = GraphicsEnvironment.getLocalGraphicsEnvironment();
         GraphicsConfiguration config = environment.getDefaultScreenDevice().getDefaultConfiguration();
@@ -72,6 +81,8 @@ public final class ScreenCaptureHelper {
 
     /**
      * 将 Robot 原始截图转为标准 RGB，并按逻辑分辨率缩放（解决 Retina 偏色与画面放大问题）。
+     * <p>
+     * 尺寸已匹配逻辑边界时跳过缩放。
      */
     public static BufferedImage toLogicalImage(BufferedImage raw, Rectangle logicalBounds) {
         BufferedImage normalized = normalizeRgb(raw);
@@ -96,6 +107,8 @@ public final class ScreenCaptureHelper {
 
     /**
      * 归一化为 TYPE_INT_RGB，修复 macOS 截图偏粉/偏紫问题。
+     * <p>
+     * 已是 24 位 INT_RGB 时直接返回原图。
      */
     public static BufferedImage normalizeRgb(BufferedImage source) {
         if (source == null) {
@@ -119,14 +132,13 @@ public final class ScreenCaptureHelper {
         return rgb;
     }
 
-    /**
-     * 估算单屏缩放比（用于诊断）。
-     */
+    /** 从 GraphicsConfiguration 读取水平缩放比（诊断用） */
     public static double resolveScaleX(GraphicsConfiguration config) {
         AffineTransform transform = config.getDefaultTransform();
         return transform.getScaleX();
     }
 
+    /** 从 GraphicsConfiguration 读取垂直缩放比（诊断用） */
     public static double resolveScaleY(GraphicsConfiguration config) {
         AffineTransform transform = config.getDefaultTransform();
         return transform.getScaleY();

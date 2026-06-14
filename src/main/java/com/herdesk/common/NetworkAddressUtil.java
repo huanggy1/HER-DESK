@@ -9,13 +9,18 @@ import java.util.Enumeration;
 import java.util.List;
 
 /**
- * 获取本机内网 IP 地址。
+ * 获取本机内网 IPv4 地址。
  */
 public final class NetworkAddressUtil {
 
     private NetworkAddressUtil() {
     }
 
+    /**
+     * 枚举所有已启用、非回环网卡的 IPv4 地址。
+     * <p>
+     * 枚举失败或无结果时回退为 {@code 127.0.0.1}，结果按字典序排序。
+     */
     public static List<String> getLocalIpv4Addresses() {
         List<String> addresses = new ArrayList<String>();
         try {
@@ -43,6 +48,9 @@ public final class NetworkAddressUtil {
         return addresses;
     }
 
+    /**
+     * 返回首个非 127 开头的 IPv4；若无则返回列表首项。
+     */
     public static String getPrimaryLocalIpv4() {
         List<String> addresses = getLocalIpv4Addresses();
         for (String address : addresses) {
