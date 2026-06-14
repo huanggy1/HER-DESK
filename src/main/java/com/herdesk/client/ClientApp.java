@@ -271,7 +271,7 @@ public class ClientApp {
         JLabel h1 = new JLabel("中继地址");
         UiTheme.styleLabel(h1);
         panel.add(h1);
-        relayHostField = new JTextField("198.176.62.33", 18);
+        relayHostField = new JTextField("192.168.1.5", 18);
         UiTheme.styleNetworkField(relayHostField);
         panel.add(relayHostField);
         JLabel h2 = new JLabel("中继端口");
