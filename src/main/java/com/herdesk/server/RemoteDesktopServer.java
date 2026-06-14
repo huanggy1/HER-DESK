@@ -20,52 +20,92 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * 被控端核心服务：监听连接、截图差分发送、接收并执行键鼠。
+ * 被控端核心服务。
+ * <p>
+ * 支持直连与中继两种模式：接受控制端连接、握手后循环截图差分发送，
+ * 并接收远程键鼠指令交由 {@link InputExecutor} 执行。
  */
 public class RemoteDesktopServer {
 
+    /**
+     * 服务状态回调，供 UI 层更新界面与日志。
+     */
     public interface ServerListener {
+
+        /** 服务状态文案变更（如等待连接、已注册等）。 */
         void onStatusChanged(String status);
 
+        /** 控制端连接成功。 */
         void onClientConnected(String remoteAddress);
 
+        /** 控制端断开，附带原因。 */
         void onClientDisconnected(String reason);
 
+        /** 不可恢复或需提示的错误。 */
         void onError(String message);
 
+        /** 结构化日志输出。 */
         void onLog(AppLogger.Level level, String message);
     }
 
+    // ---- 连接配置 ----
+    /** 直连模式监听端口；中继模式下为 0。 */
     private final int port;
+    /** 是否通过公网中继注册房间。 */
     private final boolean relayMode;
+    /** 中继服务器地址。 */
     private final String relayHost;
+    /** 中继服务器端口。 */
     private final int relayPort;
+    /** 中继房间号。 */
     private final String roomId;
+    /** 中继房间密码。 */
     private final String roomPassword;
+    /** UI/日志回调。 */
     private final ServerListener listener;
-    private final AtomicBoolean running = new AtomicBoolean(false);
-    private final AtomicBoolean clientConnected = new AtomicBoolean(false);
-    private final AtomicInteger captureIntervalMs = new AtomicInteger(100);
-    private final AtomicLong lastFrameTime = new AtomicLong(0);
-    private final AtomicInteger framesInWindow = new AtomicInteger(0);
-    private final AtomicInteger displayedFps = new AtomicInteger(0);
-    private final AtomicLong fpsWindowStart = new AtomicLong(System.currentTimeMillis());
 
+    // ---- 运行状态 ----
+    /** 服务是否已启动。 */
+    private final AtomicBoolean running = new AtomicBoolean(false);
+    /** 当前是否有控制端连接。 */
+    private final AtomicBoolean clientConnected = new AtomicBoolean(false);
+
+    // ---- 截图与帧率 ----
+    /** 自适应截图间隔（毫秒）。 */
+    private final AtomicInteger captureIntervalMs = new AtomicInteger(100);
+    /** 上一帧发送时间戳。 */
+    private final AtomicLong lastFrameTime = new AtomicLong(0);
+    /** 当前 1 秒窗口内已发送帧数。 */
+    private final AtomicInteger framesInWindow = new AtomicInteger(0);
+    /** 对外展示的 FPS。 */
+    private final AtomicInteger displayedFps = new AtomicInteger(0);
+    /** FPS 统计窗口起始时间。 */
+    private final AtomicLong fpsWindowStart = new AtomicLong(System.currentTimeMillis());
+    /** 键鼠活动后请求加速截图。 */
+    private final AtomicBoolean captureRequested = new AtomicBoolean(false);
+    /** 最近一次键鼠输入时间。 */
+    private final AtomicLong lastInputTime = new AtomicLong(0);
+    /** 距上次全帧重置以来已发送帧数。 */
+    private int framesSinceFullFrame = 0;
+    /** 是否已记录首帧日志（避免重复打印）。 */
+    private final AtomicBoolean firstFrameLogged = new AtomicBoolean(false);
+
+    // ---- 工作线程 ----
     private Thread acceptThread;
     private Thread relayThread;
     private Thread captureThread;
     private Thread heartbeatThread;
     private Thread receiveThread;
+
+    // ---- 网络与执行 ----
     private java.net.ServerSocket serverSocket;
     private NetworkChannel clientChannel;
     private InputExecutor inputExecutor;
     private DeltaFrameEncoder frameEncoder;
+    /** 当前 JPEG 画质档位。 */
     private volatile QualityLevel qualityLevel = QualityLevel.BALANCED;
+    /** 本机屏幕几何信息（握手后确定）。 */
     private volatile ScreenGeometry screenGeometry;
-    private final AtomicBoolean captureRequested = new AtomicBoolean(false);
-    private final AtomicLong lastInputTime = new AtomicLong(0);
-    private int framesSinceFullFrame = 0;
-    private final AtomicBoolean firstFrameLogged = new AtomicBoolean(false);
 
     public RemoteDesktopServer(int port, ServerListener listener) {
         this(port, false, null, 0, null, null, listener);
@@ -109,6 +149,9 @@ public class RemoteDesktopServer {
         return displayedFps.get();
     }
 
+    /**
+     * 启动服务：直连模式监听端口，中继模式注册房间并等待 JOIN。
+     */
     public synchronized void start() {
         if (running.get()) {
             return;
@@ -138,6 +181,9 @@ public class RemoteDesktopServer {
         }
     }
 
+    /**
+     * 停止服务：断开客户端、关闭套接字并回收所有工作线程。
+     */
     public synchronized void stop() {
         if (!running.get()) {
             return;
@@ -154,6 +200,7 @@ public class RemoteDesktopServer {
         listener.onStatusChanged("服务已停止");
     }
 
+    /** 中继模式：注册房间、等待控制端、断线后自动重连。 */
     private class RelayLoop implements Runnable {
         @Override
         public void run() {
@@ -221,6 +268,7 @@ public class RemoteDesktopServer {
         }
     }
 
+    /** 直连模式：循环 accept，单客户端占用时拒绝新连接。 */
     private class AcceptLoop implements Runnable {
         @Override
         public void run() {
@@ -257,6 +305,9 @@ public class RemoteDesktopServer {
         }
     }
 
+    /**
+     * 新控制端接入：握手、探测屏幕、启动截图/心跳/指令接收线程。
+     */
     private void handleNewClient(java.net.Socket socket) {
         try {
             firstFrameLogged.set(false);
@@ -307,6 +358,7 @@ public class RemoteDesktopServer {
         }
     }
 
+    /** 截图主循环：捕获屏幕、差分编码、自适应间隔发送。 */
     private class CaptureLoop implements Runnable {
         @Override
         public void run() {
@@ -360,6 +412,7 @@ public class RemoteDesktopServer {
         }
     }
 
+    /** 将编码结果封装为 FULL_FRAME 或 DELTA_FRAME 消息发送。 */
     private void sendEncodedFrame(DeltaFrameEncoder.EncodedFrame encoded) throws IOException {
         if (encoded.isFullFrame()) {
             if (firstFrameLogged.compareAndSet(false, true)) {
@@ -380,6 +433,7 @@ public class RemoteDesktopServer {
         }
     }
 
+    /** 根据键鼠活动与画面变化决定本轮截图休眠时长。 */
     private long resolveSleepInterval() {
         if (captureRequested.getAndSet(false)) {
             return Protocol.MIN_CAPTURE_INTERVAL_MS;
@@ -391,6 +445,7 @@ public class RemoteDesktopServer {
         return captureIntervalMs.get();
     }
 
+    /** 键鼠活动后触发加速截图。 */
     private void notifyInputActivity() {
         lastInputTime.set(System.currentTimeMillis());
         captureRequested.set(true);
@@ -423,6 +478,7 @@ public class RemoteDesktopServer {
         }
     }
 
+    /** 定时向控制端发送心跳，检测连接存活。 */
     private class HeartbeatLoop implements Runnable {
         @Override
         public void run() {
@@ -446,6 +502,7 @@ public class RemoteDesktopServer {
         }
     }
 
+    /** 循环接收控制端消息并分发处理。 */
     private class InputReceiveLoop implements Runnable {
         @Override
         public void run() {
@@ -469,6 +526,9 @@ public class RemoteDesktopServer {
         }
     }
 
+    /**
+     * 解析并执行控制端指令：键鼠、画质切换、断开等。
+     */
     private void handleClientMessage(NetworkChannel.ReceivedMessage message) throws IOException {
         MessageType type = message.getType();
         byte[] payload = message.getPayload();
@@ -506,6 +566,9 @@ public class RemoteDesktopServer {
         }
     }
 
+    /**
+     * 清理客户端会话：停止子线程、关闭通道、重置编码器与屏幕状态。
+     */
     private synchronized void disconnectClient(String reason) {
         if (!clientConnected.get() && clientChannel == null) {
             return;

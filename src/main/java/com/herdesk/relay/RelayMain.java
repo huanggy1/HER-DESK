@@ -4,13 +4,15 @@ import com.herdesk.common.AppLogger;
 import com.herdesk.common.RelayConnector;
 
 /**
- * 公网中继服务入口。
+ * 公网中继服务命令行入口。
  * <p>
- * 用法：java -jar her-desk-relay.jar [端口]
- * 默认端口 9000。
+ * 用法：{@code java -jar her-desk-relay.jar [端口]}，默认端口 9000。
  */
 public class RelayMain {
 
+    /**
+     * 解析端口参数，注册关闭钩子后启动 {@link RelayServer}。
+     */
     public static void main(String[] args) {
         int port = RelayConnector.DEFAULT_RELAY_PORT;
         if (args != null && args.length > 0) {

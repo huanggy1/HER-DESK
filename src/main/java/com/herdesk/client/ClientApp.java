@@ -41,11 +41,22 @@ import javax.swing.Timer;
 import javax.swing.border.Border;
 
 /**
- * 控制端 Swing 界面。
+ * 控制端 Swing 主界面：连接配置、远程画面展示、键鼠转发与全屏切换。
  */
 public class ClientApp {
 
+    // --- 界面控件 ---
     private JFrame frame;
+    private JPanel topPanel;
+    private JPanel bottomPanel;
+    private JPanel viewCard;
+    private Border viewPanelBorder;
+    private RemoteViewPanel viewPanel;
+    private JLabel statusLabel;
+    private JLabel fpsLabel;
+    private LogPanel logPanel;
+
+    // --- 连接 ---
     private JComboBox<ConnectionMode> modeBox;
     private JPanel modeCardPanel;
     private JTextField hostField;
@@ -54,27 +65,22 @@ public class ClientApp {
     private JTextField relayPortField;
     private JTextField roomIdField;
     private JTextField roomPasswordField;
+    private JComboBox<QualityLevel> qualityBox;
     private JButton connectButton;
     private JButton disconnectButton;
+    private RemoteDesktopClient client;
+    private FrameDisplayScheduler frameScheduler;
+
+    // --- 全屏 ---
     private JButton fullscreenButton;
     private JButton exitFullscreenButton;
     private JPanel fullscreenGlassPane;
     private JFrame fullscreenFrame;
     private GraphicsDevice fullscreenDevice;
-    private JPanel viewCard;
-    private Border viewPanelBorder;
-    private JPanel topPanel;
-    private JPanel bottomPanel;
     private boolean fullscreen;
     private Rectangle restoredBounds;
-    private JLabel statusLabel;
-    private JLabel fpsLabel;
-    private JComboBox<QualityLevel> qualityBox;
-    private RemoteViewPanel viewPanel;
-    private RemoteDesktopClient client;
-    private FrameDisplayScheduler frameScheduler;
-    private LogPanel logPanel;
 
+    /** 在 EDT 上启动控制端界面。 */
     public void start() {
         SwingUtilities.invokeLater(new Runnable() {
             @Override
@@ -297,6 +303,7 @@ public class ClientApp {
         layout.show(modeCardPanel, mode.name());
     }
 
+    /** 将面板上的鼠标/键盘/滚轮事件映射为远程坐标后转发给被控端。 */
     private void bindInputListeners(final RemoteViewPanel panel) {
         MouseAdapter mouseAdapter = new MouseAdapter() {
             @Override
@@ -354,6 +361,9 @@ public class ClientApp {
         });
     }
 
+    /**
+     * 进入独占全屏：将远程画面移至无边框全屏窗口，隐藏主窗口并保留退出按钮。
+     */
     private void enterFullscreen() {
         if (fullscreen || client == null || !client.isConnected()) {
             return;
@@ -427,7 +437,7 @@ public class ClientApp {
     }
 
     /**
-     * 退出全屏时彻底回收窗口、玻璃层与显示设备绑定，保证下次进入与首次一致。
+     * 销毁全屏窗口、玻璃层与显示设备引用，确保下次进入全屏时状态干净。
      */
     private void destroyFullscreenResources() {
         if (fullscreenFrame != null) {
@@ -499,6 +509,9 @@ public class ClientApp {
         fullscreenFrame.repaint();
     }
 
+    /**
+     * 退出全屏：回收全屏资源，将远程画面还原至主窗口并恢复窗口位置与尺寸。
+     */
     private void exitFullscreen() {
         if (!fullscreen) {
             return;
@@ -627,6 +640,7 @@ public class ClientApp {
         }
     }
 
+    /** 连接期间禁用连接表单，启用断开/全屏；断开后反向恢复。 */
     private void setInputsEnabled(boolean enabled) {
         modeBox.setEnabled(enabled);
         hostField.setEnabled(enabled);

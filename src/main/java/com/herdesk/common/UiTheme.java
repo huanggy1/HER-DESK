@@ -26,32 +26,42 @@ import javax.swing.border.TitledBorder;
 import javax.swing.plaf.basic.BasicButtonUI;
 
 /**
- * Her Desk 浅蓝浅色 UI 主题。
+ * Her Desk 浅蓝浅色 UI 主题：全局颜色、字体与常用 Swing 组件样式工厂。
  */
 public final class UiTheme {
 
+    // --- 背景与卡片 ---
     public static final Color BACKGROUND = color(0xF0F6FC);
     public static final Color CARD = Color.WHITE;
     public static final Color HEADER_BG = color(0xD6E8F7);
+
+    // --- 主色与边框 ---
     public static final Color PRIMARY = color(0x5B9BD5);
     public static final Color PRIMARY_DARK = color(0x3A7FBF);
     public static final Color PRIMARY_LIGHT = color(0xE8F2FA);
     public static final Color BORDER = color(0xC5DCF0);
+
+    // --- 文字色 ---
     public static final Color TITLE_TEXT = color(0x1E3A5F);
     public static final Color BODY_TEXT = color(0x4A6078);
     public static final Color MUTED_TEXT = color(0x7A92A8);
+
+    // --- 功能色 ---
     public static final Color LOG_BG = color(0xF8FBFE);
     public static final Color DANGER = color(0xD9534F);
     public static final Color DANGER_LIGHT = color(0xFDECEA);
 
+    // --- 字体 ---
     public static final Font FONT_TITLE = deriveFont(Font.BOLD, 18f);
     public static final Font FONT_SUBTITLE = deriveFont(Font.PLAIN, 13f);
     public static final Font FONT_BODY = deriveFont(Font.PLAIN, 13f);
     public static final Font FONT_LABEL = deriveFont(Font.PLAIN, 13f);
     public static final Font FONT_BUTTON = deriveFont(Font.BOLD, 13f);
     public static final Font FONT_STATUS = deriveFont(Font.PLAIN, 12f);
+    /** 日志与网络参数等宽字体。 */
     public static final Font FONT_MONO = new Font(Font.MONOSPACED, Font.PLAIN, 12);
 
+    /** 组件内边距：小 / 中 / 大。 */
     private static final EmptyBorder PADDING_SM = new EmptyBorder(8, 12, 8, 12);
     private static final EmptyBorder PADDING_MD = new EmptyBorder(12, 16, 12, 16);
     private static final EmptyBorder PADDING_LG = new EmptyBorder(16, 20, 16, 20);
@@ -59,6 +69,7 @@ public final class UiTheme {
     private UiTheme() {
     }
 
+    /** 将主题颜色与字体写入 UIManager，供全局 Swing 组件继承。 */
     public static void install() {
         UIManager.put("Panel.background", BACKGROUND);
         UIManager.put("Label.foreground", BODY_TEXT);

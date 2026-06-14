@@ -20,10 +20,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * 控制端核心服务：连接被控端、接收画面、发送键鼠。
+ * 控制端核心服务：建立连接、收发协议消息、解码画面帧并转发键鼠事件。
  */
 public class RemoteDesktopClient {
 
+    /** 连接状态与画面帧回调，由 UI 层实现。 */
     public interface ClientListener {
         void onStatusChanged(String status);
 
@@ -41,21 +42,28 @@ public class RemoteDesktopClient {
     }
 
     private final ClientListener listener;
+
+    // --- 连接状态 ---
     private final AtomicBoolean connected = new AtomicBoolean(false);
     private final AtomicBoolean connecting = new AtomicBoolean(false);
-    private final AtomicInteger fpsCounter = new AtomicInteger(0);
-    private final AtomicLong fpsWindowStart = new AtomicLong(System.currentTimeMillis());
-    private final BlockingDeque<OutboundMessage> outboundQueue = new LinkedBlockingDeque<OutboundMessage>();
-
     private String host;
     private int port;
     private NetworkChannel channel;
+
+    // --- 工作线程 ---
     private Thread receiveThread;
     private Thread senderThread;
     private Thread heartbeatThread;
+
+    // --- 出站消息队列（键鼠优先插队） ---
+    private final BlockingDeque<OutboundMessage> outboundQueue = new LinkedBlockingDeque<OutboundMessage>();
+
+    // --- 画面解码与统计 ---
     private DeltaFrameDecoder frameDecoder;
     private volatile QualityLevel qualityLevel = QualityLevel.BALANCED;
     private final AtomicBoolean firstFrameLogged = new AtomicBoolean(false);
+    private final AtomicInteger fpsCounter = new AtomicInteger(0);
+    private final AtomicLong fpsWindowStart = new AtomicLong(System.currentTimeMillis());
 
     public RemoteDesktopClient(ClientListener listener) {
         this.listener = listener;
@@ -103,6 +111,7 @@ public class RemoteDesktopClient {
         final String joinPassword = password;
         final String joinRelayHost = relayHost;
         final int joinRelayPort = relayPort;
+        // 连接在独立线程执行，避免阻塞 UI
         Thread connectThread = new Thread(new Runnable() {
             @Override
             public void run() {
@@ -158,6 +167,7 @@ public class RemoteDesktopClient {
         }
     }
 
+    /** 握手成功后启动发送、心跳、接收三条守护线程。 */
     private void establishSession(Socket socket) throws IOException {
         firstFrameLogged.set(false);
         channel = new NetworkChannel(socket);
@@ -269,6 +279,7 @@ public class RemoteDesktopClient {
         }
     }
 
+    /** 键鼠等交互消息插队，画质等非紧急消息排队尾。 */
     private void enqueue(MessageType type, byte[] payload, boolean priority) {
         OutboundMessage message = new OutboundMessage(type, payload);
         if (priority) {
@@ -278,6 +289,7 @@ public class RemoteDesktopClient {
         }
     }
 
+    /** 从出站队列取消息并写入网络通道，遇断开则触发 shutdown。 */
     private class SenderLoop implements Runnable {
         @Override
         public void run() {
@@ -307,6 +319,7 @@ public class RemoteDesktopClient {
         }
     }
 
+    /** 循环读取被控端消息，解码全帧/差分帧并通知 UI。 */
     private class ReceiveLoop implements Runnable {
         @Override
         public void run() {
@@ -330,6 +343,7 @@ public class RemoteDesktopClient {
         }
     }
 
+    /** 按协议类型分发：全帧、差分帧、心跳、断开。 */
     private void handleServerMessage(NetworkChannel.ReceivedMessage message) throws IOException {
         MessageType type = message.getType();
         byte[] payload = message.getPayload();
@@ -368,6 +382,7 @@ public class RemoteDesktopClient {
         listener.onFrameUpdated(image);
     }
 
+    /** 滑动 1 秒窗口统计接收帧率。 */
     private void recordFps() {
         fpsCounter.incrementAndGet();
         long now = System.currentTimeMillis();
@@ -379,6 +394,7 @@ public class RemoteDesktopClient {
         }
     }
 
+    /** 定时发送心跳，维持连接存活。 */
     private class HeartbeatLoop implements Runnable {
         @Override
         public void run() {
@@ -394,6 +410,7 @@ public class RemoteDesktopClient {
         }
     }
 
+    /** 统一关闭连接：停线程、清队列、重置解码器并通知 UI。 */
     private synchronized void shutdown(String reason) {
         if (!connected.get() && !connecting.get()) {
             cleanupChannel();
@@ -460,6 +477,7 @@ public class RemoteDesktopClient {
         }
     }
 
+    /** 待发送的协议消息封装。 */
     private static final class OutboundMessage {
         private final MessageType type;
         private final byte[] payload;

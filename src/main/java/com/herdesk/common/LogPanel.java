@@ -8,10 +8,11 @@ import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
 
 /**
- * 可滚动的日志面板。
+ * 可滚动的日志面板，线程安全追加，超出行数自动裁剪旧记录。
  */
 public class LogPanel extends JPanel {
 
+    /** 保留的最大日志行数，超出后删除最早内容。 */
     private static final int MAX_LINES = 500;
 
     private final JTextArea textArea;
@@ -43,6 +44,7 @@ public class LogPanel extends JPanel {
         add(scrollPane, BorderLayout.CENTER);
     }
 
+    /** 非 EDT 调用时通过 invokeLater 安全追加。 */
     public void append(AppLogger.Level level, String message) {
         if (message == null || message.trim().isEmpty()) {
             return;
@@ -66,6 +68,7 @@ public class LogPanel extends JPanel {
         textArea.setCaretPosition(textArea.getDocument().getLength());
     }
 
+    /** 删除超出 MAX_LINES 的头部行，防止内存无限增长。 */
     private void trimLines() {
         int lineCount = textArea.getLineCount();
         if (lineCount <= MAX_LINES) {

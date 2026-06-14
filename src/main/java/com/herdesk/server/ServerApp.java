@@ -24,29 +24,55 @@ import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 
 /**
- * 被控端 Swing 界面。
+ * 被控端 Swing 图形界面。
+ * <p>
+ * 提供连接模式选择、服务启停、运行状态展示与日志面板。
  */
 public class ServerApp {
 
+    // ---- 窗口 ----
     private JFrame frame;
+
+    // ---- 连接设置 ----
+    /** 直连 / 中继模式切换。 */
     private JComboBox<ConnectionMode> modeBox;
+    /** 模式对应参数面板容器（CardLayout）。 */
     private JPanel modeCardPanel;
+    /** 直连监听端口。 */
     private JTextField portField;
+    /** 中继服务器地址。 */
     private JTextField relayHostField;
+    /** 中继服务器端口。 */
     private JTextField relayPortField;
+    /** 中继房间号。 */
     private JTextField roomIdField;
+    /** 中继房间密码。 */
     private JTextField roomPasswordField;
+    /** 重新生成房间号按钮。 */
     private JButton regenerateRoomButton;
+
+    // ---- 运行状态 ----
+    /** 本机 IP 或中继模式提示。 */
     private JLabel ipLabel;
+    /** 服务状态文案。 */
     private JLabel statusLabel;
+    /** 当前控制端地址。 */
     private JLabel clientLabel;
+    /** 实时发送帧率。 */
     private JLabel fpsLabel;
+
+    // ---- 服务控制 ----
     private JButton startButton;
     private JButton stopButton;
+    /** 被控端核心服务实例。 */
     private RemoteDesktopServer server;
+    /** 每秒刷新 FPS 显示的定时器。 */
     private Timer fpsTimer;
+
+    // ---- 日志 ----
     private LogPanel logPanel;
 
+    /** 在 EDT 上创建并显示主窗口。 */
     public void start() {
         SwingUtilities.invokeLater(new Runnable() {
             @Override
@@ -56,6 +82,7 @@ public class ServerApp {
         });
     }
 
+    /** 构建 UI 布局、绑定事件并启动 FPS 定时器。 */
     private void createAndShowUi() {
         UiTheme.install();
         frame = new JFrame("Her Desk - 被控端");
@@ -194,6 +221,7 @@ public class ServerApp {
         return panel;
     }
 
+    /** 随机生成 6 位房间号并写入输入框。 */
     private void regenerateRoomId() {
         if (roomIdField != null) {
             roomIdField.setText(RoomIdGenerator.generate());
@@ -203,6 +231,7 @@ public class ServerApp {
         }
     }
 
+    /** 根据当前连接模式切换参数面板与 IP 提示文案。 */
     private void switchModePanel() {
         ConnectionMode mode = (ConnectionMode) modeBox.getSelectedItem();
         CardLayout layout = (CardLayout) modeCardPanel.getLayout();
@@ -217,6 +246,9 @@ public class ServerApp {
         }
     }
 
+    /**
+     * 校验参数并启动 {@link RemoteDesktopServer}（直连或中继）。
+     */
     private void startServer() {
         if (server != null && server.isRunning()) {
             return;
@@ -259,6 +291,7 @@ public class ServerApp {
         server.start();
     }
 
+    /** 创建服务层回调，将事件派发到 Swing EDT 更新 UI。 */
     private RemoteDesktopServer.ServerListener createListener() {
         return new RemoteDesktopServer.ServerListener() {
             @Override
@@ -302,6 +335,7 @@ public class ServerApp {
         return port;
     }
 
+    /** 停止服务并恢复输入控件与状态标签。 */
     private void stopServer() {
         if (server != null) {
             logPanel.append(AppLogger.Level.INFO, "用户点击停止服务");
@@ -316,6 +350,7 @@ public class ServerApp {
         switchModePanel();
     }
 
+    /** 服务运行期间禁用连接参数与启动按钮。 */
     private void setInputsEnabled(boolean enabled) {
         modeBox.setEnabled(enabled);
         portField.setEnabled(enabled);
@@ -330,6 +365,7 @@ public class ServerApp {
         stopButton.setEnabled(!enabled);
     }
 
+    /** 每秒从服务层拉取 FPS 并刷新标签。 */
     private void updateFps() {
         if (server != null && server.isClientConnected()) {
             fpsLabel.setText("帧率: " + server.getCurrentFps() + " FPS");

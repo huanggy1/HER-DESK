@@ -14,13 +14,16 @@ import javax.swing.BorderFactory;
 import javax.swing.JPanel;
 
 /**
- * 远程桌面画面展示面板，支持缩放自适应。
+ * 远程桌面画面展示面板：等比缩放居中绘制，支持本地坐标到远程像素映射。
  */
 public class RemoteViewPanel extends JPanel {
 
+    /** 当前待绘制的远程帧图像。 */
     private BufferedImage frameImage;
+    /** 远程屏幕像素尺寸（来自握手或帧尺寸）。 */
     private int remoteWidth;
     private int remoteHeight;
+    /** 帧在面板内的实际绘制区域（等比缩放后居中）。 */
     private int drawX;
     private int drawY;
     private int drawWidth;
@@ -125,6 +128,9 @@ public class RemoteViewPanel extends JPanel {
         return new int[]{x, y};
     }
 
+    /**
+     * 按面板与远程尺寸计算等比缩放后的绘制矩形，保持宽高比并居中。
+     */
     private void recalculateDrawBounds() {
         int panelWidth = getWidth();
         int panelHeight = getHeight();

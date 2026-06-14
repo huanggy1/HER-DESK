@@ -13,7 +13,9 @@ import java.nio.charset.StandardCharsets;
  */
 public final class RelayConnector {
 
+    /** 默认中继 TCP 端口 */
     public static final int DEFAULT_RELAY_PORT = 9000;
+    /** 房间号最大长度 */
     public static final int MAX_ROOM_ID_LENGTH = 32;
 
     /**
@@ -23,19 +25,23 @@ public final class RelayConnector {
         void log(AppLogger.Level level, String message);
     }
 
+    /** 当前线程的步骤日志回调 */
     private static final ThreadLocal<StepLogger> STEP_LOGGER = new ThreadLocal<StepLogger>();
 
     private RelayConnector() {
     }
 
+    /** 绑定当前线程的步骤日志器 */
     public static void bindStepLogger(StepLogger logger) {
         STEP_LOGGER.set(logger);
     }
 
+    /** 解除当前线程的步骤日志器 */
     public static void unbindStepLogger() {
         STEP_LOGGER.remove();
     }
 
+    /** 若已绑定则输出步骤日志 */
     private static void step(AppLogger.Level level, String message) {
         StepLogger logger = STEP_LOGGER.get();
         if (logger != null) {
@@ -45,6 +51,8 @@ public final class RelayConnector {
 
     /**
      * 被控端：注册房间并等待控制端接入。
+     * <p>
+     * 期望响应 {@code OK WAITING}；否则抛出带友好文案的 IOException。
      */
     public static Socket registerServer(String relayHost, int relayPort, String roomId, String password)
             throws IOException {
@@ -71,6 +79,8 @@ public final class RelayConnector {
 
     /**
      * 控制端：加入房间并与被控端建立透明隧道。
+     * <p>
+     * 期望响应 {@code OK CONNECTED}；否则抛出带友好文案的 IOException。
      */
     public static Socket joinClient(String relayHost, int relayPort, String roomId, String password)
             throws IOException {
@@ -95,6 +105,9 @@ public final class RelayConnector {
         }
     }
 
+    /**
+     * 校验房间号：非空、长度、仅允许字母数字及 {@code -_}。
+     */
     public static void validateRoomId(String roomId) throws IOException {
         if (roomId == null || roomId.trim().isEmpty()) {
             throw new IOException("房间号不能为空");
@@ -111,6 +124,11 @@ public final class RelayConnector {
         }
     }
 
+    /**
+     * 从中继输入流读取一行（UTF-8，忽略 {@code \r}）。
+     * <p>
+     * 连接关闭且无数据时抛出 IOException。
+     */
     public static String readLine(InputStream input) throws IOException {
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         int data;
@@ -128,12 +146,14 @@ public final class RelayConnector {
         return new String(buffer.toByteArray(), StandardCharsets.UTF_8);
     }
 
+    /** 向中继发送一行命令（末尾追加 {@code \n}） */
     public static void sendLine(Socket socket, String line) throws IOException {
         OutputStream output = socket.getOutputStream();
         output.write((line + "\n").getBytes(StandardCharsets.UTF_8));
         output.flush();
     }
 
+    /** 建立 TCP 连接，超时见 {@link AppLogger#CONNECT_TIMEOUT_MS} */
     private static Socket createSocket(String host, int port) throws IOException {
         int timeoutSec = AppLogger.CONNECT_TIMEOUT_MS / 1000;
         step(AppLogger.Level.INFO,
@@ -152,6 +172,7 @@ public final class RelayConnector {
         return socket;
     }
 
+    /** 将中继错误响应转为用户可读文案 */
     private static String formatRelayFailure(String prefix, String response) {
         if ("ERROR ROOM_NOT_FOUND".equals(response)) {
             return prefix + "：房间未找到（被控端可能未注册或房间号不一致）";
@@ -164,6 +185,8 @@ public final class RelayConnector {
 
     /**
      * 解析 REGISTER/JOIN 命令参数：房间号 + 密码。
+     *
+     * @return [房间号, 密码]
      */
     public static String[] parseRoomAndPassword(String commandLine) throws IOException {
         if (commandLine == null || commandLine.trim().isEmpty()) {

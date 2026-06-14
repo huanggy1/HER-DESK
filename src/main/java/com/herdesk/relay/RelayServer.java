@@ -14,20 +14,31 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * 公网 TCP 中继：配对 REGISTER / JOIN 连接并透明转发。
+ * 公网 TCP 中继服务。
+ * <p>
+ * 被控端通过 REGISTER 注册房间，控制端通过 JOIN 加入；
+ * 配对成功后双向透明转发字节流。
  */
 public class RelayServer {
 
+    /** 监听端口。 */
     private final int port;
+    /** 已注册、等待 JOIN 的被控端连接，key 为房间号。 */
     private final Map<String, Socket> waitingRooms = new ConcurrentHashMap<String, Socket>();
+    /** 房间号对应的密码，用于 JOIN 校验。 */
     private final Map<String, String> roomPasswords = new ConcurrentHashMap<String, String>();
+    /** 每连接一个处理任务的线程池。 */
     private final ExecutorService executor = Executors.newCachedThreadPool();
+    /** 服务是否运行中。 */
     private volatile boolean running;
 
     public RelayServer(int port) {
         this.port = port;
     }
 
+    /**
+     * 启动中继：监听端口，为每个入站连接异步分发处理。
+     */
     public void start() throws IOException {
         running = true;
         ServerSocket serverSocket = new ServerSocket(port);
@@ -53,6 +64,7 @@ public class RelayServer {
         serverSocket.close();
     }
 
+    /** 停止中继：关闭等待中的房间连接并回收线程池。 */
     public void stop() {
         running = false;
         for (Socket socket : waitingRooms.values()) {
@@ -64,6 +76,7 @@ public class RelayServer {
         AppLogger.console(AppLogger.Level.INFO, "Her Desk Relay 已停止");
     }
 
+    /** 读取首行命令并路由到 REGISTER 或 JOIN 处理。 */
     private void handleConnection(Socket socket) {
         String remote = String.valueOf(socket.getRemoteSocketAddress());
         try {
@@ -98,6 +111,9 @@ public class RelayServer {
         }
     }
 
+    /**
+     * 被控端注册房间：校验参数后进入等待队列，回复 OK WAITING。
+     */
     private void handleRegister(Socket socket, String payload) throws IOException {
         String roomId;
         String password;
@@ -125,6 +141,9 @@ public class RelayServer {
                 "房间已注册: " + roomId + " <- " + socket.getRemoteSocketAddress());
     }
 
+    /**
+     * 控制端加入房间：校验密码后与被控端配对，回复 OK CONNECTED 并桥接。
+     */
     private void handleJoin(Socket clientSocket, String payload) throws IOException {
         String roomId;
         String password;
@@ -162,6 +181,7 @@ public class RelayServer {
         bridge(serverSocket, clientSocket, roomId);
     }
 
+    /** 启动双向转发线程，任一端结束后关闭两端套接字。 */
     private void bridge(final Socket serverSocket, final Socket clientSocket, final String roomId) {
         Thread serverToClient = new Thread(new Runnable() {
             @Override
@@ -191,6 +211,7 @@ public class RelayServer {
         }
     }
 
+    /** 从源套接字读取并写入目标套接字，直到 EOF 或异常。 */
     private void pump(Socket from, Socket to) {
         byte[] buffer = new byte[32768];
         try {

@@ -43,6 +43,7 @@ public class Launcher {
         });
     }
 
+    /** 无命令行参数时弹出模式选择对话框。 */
     private static void showModeChooser() {
         JFrame frame = new JFrame("Her Desk");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
